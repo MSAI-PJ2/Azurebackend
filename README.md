@@ -18,13 +18,14 @@
 - Refactor 2: `payloads.py`, `turns.py`, `prompts.py`로 SSE payload/session turn/LLM message builder 분리 완료
 - Refactor 3-1: `request_context.py`, `repositories/session_repository.py`로 Cosmos DB 교체 전 입력 정규화/세션 저장소 경계 생성 및 Azure 회귀 테스트 완료
 - Refactor 3-2: `adapters.py` service adapter boundary completed and Azure regression tested
+- Refactor 3-3 준비: `SESSION_REPOSITORY=memory|cosmos` 선택형 세션 저장소. Cosmos DB는 이미 배포된 DB/컨테이너에 연결하는 방식.
 
 ## 주요 경로
 - `services/api-gateway/app/main.py`: FastAPI entrypoint
 - `services/api-gateway/app/dag.py`: respond orchestration / STT→DAG 연결
 - `services/api-gateway/app/adapters.py`: 외부 서비스 adapter boundary
 - `services/api-gateway/app/request_context.py`: `/v1/respond` 입력 정규화 context
-- `services/api-gateway/app/repositories/session_repository.py`: 현재 in-memory session store를 감싸는 repository boundary
+- `services/api-gateway/app/repositories/session_repository.py`: in-memory/Cosmos DB 세션 repository boundary
 - `services/api-gateway/app/payloads.py`: SSE/API payload builder
 - `services/api-gateway/app/turns.py`: session turn builder
 - `services/api-gateway/app/prompts.py`: LLM message builder
@@ -43,10 +44,24 @@
 - 이 폴더에는 실제 secret/key를 넣지 않았습니다.
 - 배포 시 secret은 Azure Container Apps secretref로 주입해야 합니다.
 - 외부 호출은 `x-api-key` 헤더가 필요합니다.
+- Cosmos DB 키도 `.env`/프론트에 넣지 말고 Azure Container Apps secretref로만 주입합니다.
+
+## Cosmos DB 세션 저장소 설정
+- 기본값은 `SESSION_REPOSITORY=memory`입니다. 기존 동작과 동일하게 revision/replica 변경 시 세션이 사라질 수 있습니다.
+- Cosmos DB를 사용할 때는 `SESSION_REPOSITORY=cosmos`로 바꾸고 아래 값을 컨테이너 앱 환경변수/secretref로 설정합니다.
+- 예상 컨테이너 파티션 키는 `/session_id`입니다. 문서 `id`도 `session_id`와 동일하게 저장합니다.
+
+```env
+SESSION_REPOSITORY=cosmos
+COSMOS_ENDPOINT=https://<account>.documents.azure.com:443/
+COSMOS_KEY=<secretref 권장>
+COSMOS_DATABASE=<database>
+COSMOS_CONTAINER=<container>
+```
 
 ## 최신 검증
-- main 병합 커밋: `659f91f 게이트웨이 request context session repository 리팩터링 병합`
-- Azure 테스트 기준: 3차-1 request context/session repository boundary 배포 후 회귀 테스트
+- main 병합 커밋: `32f0174 게이트웨이 3차 2 서비스 어댑터 리팩터링 병합`
+- Azure 테스트 기준: 3차-2 service adapter boundary 배포 후 회귀 테스트
 - Azure 상태: Healthy / Traffic 100
 - 회귀 테스트 PASS: health, auth 401, classify, respond text, session read, crisis, transcript, TTS, audio STT success, audio STT failure
 - 로컬 검증: `py_compile` 및 `git diff --check` 통과

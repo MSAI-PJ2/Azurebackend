@@ -28,9 +28,10 @@ async def classify(text: str) -> dict:
 
 
 async def retrieve(text: str) -> list[dict]:
-    # 연결 구조만: RETRIEVE_PROVIDER=local(stub) / azure(Azure AI Search).
-    # 동기 retriever를 스레드로 돌려 gather 동시성을 유지한다.
+    # 연결 구조만 RETRIEVE_PROVIDER=local(stub) / azure(Azure AI Search)로 분기한다.
+    # 외부 retriever 호출은 어댑터로 숨겨서 gather 동시성 흐름을 유지한다.
     return await services.retriever.retrieve(text)
+
 
 
 async def stt_then_respond_stream(
