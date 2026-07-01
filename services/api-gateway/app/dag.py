@@ -4,7 +4,7 @@ import json
 import httpx
 
 from common.llm_client import LLMClient
-from common.speech_client import synthesize_speech_base64
+from common.speech_client import synthesize_speech_base64, transcribe_audio_input_detailed
 from retrieve.client import get_retriever
 
 from . import clients, crisis, sessions, settings
@@ -70,27 +70,33 @@ async def retrieve(text: str) -> list[dict]:
 
 
 async def synthesize_tts(text: str, tts_options: dict | None) -> dict:
-    """
-    TTS 실행 후 SSE에 실어보낼 이벤트 페이로드를 만든다.
-    실패해도 본문 응답 흐름을 막지 않도록 status: error로 감싸 반환한다.
+    """Build a TTS SSE payload without blocking the response flow.
+
+    Canonical contract:
+      type=tts, status=completed|error, provider=azure,
+      audio={kind,data,mime_type}, audio_base64(deprecated alias).
     """
     voice = (tts_options or {}).get("voice")
     try:
         audio_b64 = await asyncio.to_thread(synthesize_speech_base64, text, voice)
         return {
-            "status": "ready",
+            "status": "completed",
+            "provider": "azure",
             "text": text,
+            "mime_type": "audio/wav",
+            "format": "wav",
             "audio": {"kind": "base64", "data": audio_b64, "mime_type": "audio/wav"},
+            "audio_base64": audio_b64,
             "options": tts_options,
         }
     except Exception as exc:
         return {
             "status": "error",
+            "provider": "azure",
             "text": text,
-            "error": str(exc)[:200],
+            "error": str(exc)[:300],
             "options": tts_options,
         }
-
 
 def rerank(
     candidates: list[dict],
@@ -125,6 +131,68 @@ def rerank(
     return sorted(deduped.values(), key=lambda c: c["score"], reverse=True)[:top_n]
 
 
+async def stt_then_respond_stream(
+    session_id: str | None = None,
+    input_meta: dict | None = None,
+    tts: dict | None = None,
+):
+    """Transcribe audio, emit STT debug events, then continue the existing DAG."""
+    session = sessions.ensure_session(session_id)
+    session_id = session["session_id"]
+    input_meta = input_meta or {}
+    audio = input_meta.get("audio") or {}
+    stt_options = input_meta.get("stt") or {}
+    language = stt_options.get("language") or audio.get("language") or "ko-KR"
+
+    yield sse({
+        "type": "stt",
+        "session_id": session_id,
+        "status": "processing",
+        "provider": stt_options.get("provider") or "azure",
+        "language": language,
+    })
+
+    result = await asyncio.to_thread(transcribe_audio_input_detailed, audio)
+
+    if result.get("status") != "completed" or not result.get("transcript"):
+        sessions.append_turn(
+            session_id,
+            {
+                "role": "user",
+                "text": "",
+                "event": "stt_failed",
+                "input": input_meta,
+                "stt_result": result,
+                "tts": tts,
+            },
+        )
+        yield sse({"type": "stt", "session_id": session_id, **result})
+        yield sse({
+            "type": "input_required",
+            "session_id": session_id,
+            "reason": result.get("status") or "stt_failed",
+            "message": "audio payload was accepted, but STT did not produce a transcript. Check stt event error/reason, or send text/stt.transcript.",
+        })
+        yield sse({"type": "done", "session_id": session_id})
+        return
+
+    input_meta = {
+        **input_meta,
+        "input_type": "transcript",
+        "stt": {
+            **stt_options,
+            "provider": result.get("provider"),
+            "language": result.get("language") or language,
+            "transcript": result.get("transcript"),
+            "confidence": result.get("confidence"),
+            "recognition_status": result.get("recognition_status"),
+        },
+    }
+    yield sse({"type": "stt", "session_id": session_id, **result})
+
+    async for event in respond_stream(result["transcript"], session_id, input_meta, tts):
+        yield event
+
 async def input_pending_stream(
     session_id: str | None = None,
     input_meta: dict | None = None,
@@ -157,8 +225,8 @@ async def input_pending_stream(
         {
             "type": "input_required",
             "session_id": session_id,
-            "reason": "stt_not_configured",
-            "message": "audio-only payload was accepted, but STT is not wired yet. Send text or stt.transcript for now.",
+            "reason": "text_required",
+            "message": "No text or transcript was provided. Send text, stt.transcript, or an audio payload.",
         }
     )
     yield sse({"type": "done", "session_id": session_id})

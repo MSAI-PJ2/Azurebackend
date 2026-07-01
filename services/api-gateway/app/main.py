@@ -1,14 +1,12 @@
-import asyncio
 import uuid
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
-from common.speech_client import transcribe_audio_input
 
 from . import clients, dag, sessions, settings
-from .schemas import BatchClassifyIn, ClassifyIn, RespondIn, SessionCreateIn, SttIn
+from .schemas import BatchClassifyIn, ClassifyIn, RespondIn, SessionCreateIn
 
 app = FastAPI(title="mlnode-api-gateway")
 
@@ -63,35 +61,19 @@ async def batch_classify(body: BatchClassifyIn):
 
 @app.post("/v1/respond", dependencies=[Depends(require_key)])
 async def respond(body: RespondIn):
-    # ── STT: 오디오만 왔고 transcript가 없으면 여기서 텍스트로 변환 ──
-    # (text가 이미 있거나 stt.transcript가 이미 채워져 있으면 건너뜀 —
-    #  effective_text()가 그 경우 그대로 처리하던 기존 동작을 유지)
-    if body.audio and not (body.stt and body.stt.transcript):
-        try:
-            transcript, ok = await asyncio.to_thread(
-                transcribe_audio_input, body.audio.model_dump(exclude_none=True)
-            )
-        except Exception:
-            transcript, ok = "", False
-
-        if ok and transcript:
-            if body.stt is None:
-                body.stt = SttIn(
-                    transcript=transcript,
-                    provider="azure",
-                    language=body.audio.language or "ko-KR",
-                )
-            else:
-                body.stt.transcript = transcript
-        # 실패 시 그대로 두면 effective_text()가 None을 반환 →
-        # 기존처럼 input_pending_stream으로 빠짐 (동작 변경 없음)
-
     text = body.effective_text()
     input_meta = body.input_meta()
     tts = body.tts.model_dump(exclude_none=True) if body.tts else None
 
+    if body.audio and not text:
+        # Keep STT inside the streaming path so clients can receive explicit
+        # stt processing/completed/error events instead of a silent fallback.
+        return StreamingResponse(
+            dag.stt_then_respond_stream(body.session_id, input_meta, tts),
+            media_type="text/event-stream",
+        )
+
     if not text:
-        # Accept STT/TTS-shaped payloads now, but fail gracefully until STT is wired.
         return StreamingResponse(
             dag.input_pending_stream(body.session_id, input_meta, tts),
             media_type="text/event-stream",
