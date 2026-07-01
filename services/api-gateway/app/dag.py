@@ -235,4 +235,3 @@ async def respond_stream(
     yield sse({"type": "done", "session_id": session_id})
 
 respond_stream._llm = LLMClient()
-
