@@ -1,6 +1,7 @@
 ﻿import json
 import os
 import sys
+import urllib.error
 import urllib.request
 
 BASE = os.environ.get("GW_FQDN", "").strip()
@@ -19,9 +20,14 @@ headers = {"Content-Type": "application/json", "x-api-key": KEY}
 def request_json(method: str, path: str, payload=None, timeout=120):
     data = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(base_url + path, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        body = resp.read().decode("utf-8")
-        return json.loads(body) if body else None
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = resp.read().decode("utf-8")
+            return json.loads(body) if body else None
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return None
+        raise
 
 
 def post_sse(path: str, payload: dict, timeout=180):
