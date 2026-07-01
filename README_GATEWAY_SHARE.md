@@ -7,8 +7,8 @@
 ```text
 Gateway revision: api-gateway--0000021
 Gateway image: acrregistry001.azurecr.io/gateway:refactor-3-2-service-adapters-20260701
-Git branch: refactor/gateway-3-2-service-adapter-boundary
-Git commit: c6087e4
+Git branch: refactor/gateway-3-3-cosmos-session-repository
+Git commit: 32f0174 기준 + 3-3 Cosmos session branch 작업 중
 Framework: FastAPI + Uvicorn
 Python: 3.11
 LLM: Azure OpenAI gpt-4.1-mini
@@ -40,7 +40,7 @@ services/api-gateway/app/adapters.py  Classifier/Safety/Retriever/LLM/Speech ser
 services/api-gateway/app/request_context.py
                                       /v1/respond 입력 정규화 context
 services/api-gateway/app/repositories/session_repository.py
-                                      Cosmos DB 전환 대비 session repository boundary
+                                      memory/Cosmos DB session repository boundary
 services/api-gateway/app/payloads.py  SSE/API payload builder
 services/api-gateway/app/turns.py     session turn builder
 services/api-gateway/app/prompts.py   LLM message builder
@@ -66,6 +66,17 @@ services/api-gateway/app/ranking.py   RAG rerank helper
 대상: classifier, safety, retriever, LLM, speech STT/TTS
 현재: adapters.py가 기존 구현을 감싸므로 API 계약과 런타임 동작은 유지한다.
 다음: Cosmos DB 연결 전 Gateway orchestration 비대화를 줄인다.
+```
+
+## 3차-3 Cosmos DB 세션 저장소 의도
+
+```text
+목표: 이미 배포된 Cosmos DB NoSQL 컨테이너를 Gateway 세션 저장소로 선택 연결한다.
+기본: SESSION_REPOSITORY=memory는 기존 임시 메모리 저장소 유지
+전환: SESSION_REPOSITORY=cosmos이면 Cosmos DB에 session turn 저장
+컨테이너 파티션 키: /session_id
+문서 id: session_id
+주의: Cosmos key는 파일/프론트에 넣지 말고 Azure Container App secretref로 주입
 ```
 
 ## 주요 엔드포인트
@@ -153,4 +164,5 @@ az acr build \
 ## 보안 주의
 
 - `API_KEY`, `CONTENT_SAFETY_KEY`, `AZURE_SEARCH_API_KEY`, `AZURE_OPENAI_API_KEY`는 절대 파일에 넣지 말고 Azure Container App secret 또는 로컬 환경변수로 주입하세요.
+- `COSMOS_KEY`도 동일하게 Azure Container App secret 또는 로컬 환경변수로만 주입하세요.
 - `.env`, `__pycache__`, `*.pyc`, smoke output은 공유 대상에서 제외했습니다.
