@@ -54,10 +54,18 @@ def _resolve_audio_bytes(audio: dict) -> bytes:
     kind = audio.get("kind")
 
     if kind == "base64":
-        return base64.b64decode(audio["data"])
+        data = audio.get("data")
+        if not data:
+            raise ValueError("audio.data is required when audio.kind='base64'")
+        if isinstance(data, str) and data.strip().startswith("data:") and "," in data:
+            data = data.split(",", 1)[1]
+        return base64.b64decode(data)
 
     if kind == "url":
-        resp = httpx.get(audio["url"], timeout=15)
+        url = audio.get("url")
+        if not url:
+            raise ValueError("audio.url is required when audio.kind='url'")
+        resp = httpx.get(url, timeout=15)
         resp.raise_for_status()
         return resp.content
 
@@ -120,6 +128,79 @@ def transcribe_audio_input(audio: dict) -> tuple[str, bool]:
 
     cancel = speechsdk.CancellationDetails.from_result(result)
     raise RuntimeError(f"STT canceled: {cancel.reason} / {cancel.error_details}")
+
+
+def transcribe_audio_input_detailed(audio: dict) -> dict:
+    """Return a detailed STT result for SSE/debugging.
+
+    This keeps the old transcribe_audio_input() API available while giving the
+    gateway a stable contract for `stt` SSE events.
+    """
+    try:
+        raw = _resolve_audio_bytes(audio)
+        wav = _to_wav(raw, audio.get("mime_type"))
+
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            f.write(wav)
+            tmp_path = f.name
+
+        try:
+            audio_cfg = speechsdk.audio.AudioConfig(filename=tmp_path)
+            recognizer = speechsdk.SpeechRecognizer(
+                speech_config=_speech_config(), audio_config=audio_cfg
+            )
+            result = recognizer.recognize_once_async().get()
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+        base = {
+            "provider": "azure",
+            "language": audio.get("language") or "ko-KR",
+            "mime_type": audio.get("mime_type"),
+            "kind": audio.get("kind"),
+        }
+
+        if result.reason == speechsdk.ResultReason.RecognizedSpeech:
+            return {
+                **base,
+                "status": "completed",
+                "transcript": result.text.strip(),
+                "confidence": None,
+                "recognition_status": "RecognizedSpeech",
+            }
+
+        if result.reason == speechsdk.ResultReason.NoMatch:
+            return {
+                **base,
+                "status": "no_match",
+                "transcript": "",
+                "confidence": None,
+                "recognition_status": "NoMatch",
+                "reason": str(result.no_match_details),
+            }
+
+        cancel = speechsdk.CancellationDetails.from_result(result)
+        return {
+            **base,
+            "status": "error",
+            "transcript": "",
+            "recognition_status": "Canceled",
+            "reason": str(cancel.reason),
+            "error": str(cancel.error_details),
+        }
+    except Exception as exc:
+        return {
+            "status": "error",
+            "provider": "azure",
+            "language": audio.get("language") or "ko-KR",
+            "mime_type": audio.get("mime_type"),
+            "kind": audio.get("kind"),
+            "transcript": "",
+            "error": str(exc),
+        }
 
 
 def synthesize_speech_base64(text: str, voice_name: str | None = None) -> str:
