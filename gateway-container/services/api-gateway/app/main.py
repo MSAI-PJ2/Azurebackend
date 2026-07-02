@@ -1,22 +1,35 @@
+"""[진입점] 서버가 시작될 때 가장 먼저 실행되는 파일.
+
+Dockerfile 의 `uvicorn app.main:app` 이 이 파일의 `app` 객체(FastAPI 서버)를 띄운다.
+여기서는 서버를 만들고 공통 설정(CORS, 요청ID)과 URL 목록(api.py)을 연결만 한다.
+"무엇을 응답할지"의 실제 내용은 전부 다른 파일에 있다:
+    URL 목록          → api.py
+    상담 응답 흐름    → orchestrator/respond_flow.py
+"""
+import logging
+import os
 import uuid
 
-import fastapi
-from azure.monitor.opentelemetry import configure_azure_monitor
-configure_azure_monitor()
-
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
 
+from . import settings
+from .api import router
 
-from . import dag, settings
-from .adapters import services
-from .repositories import session_repository
-from .request_context import RespondRequestContext
-from .schemas import BatchClassifyIn, ClassifyIn, RespondIn, SessionCreateIn
+# Azure 모니터링(App Insights) 연결 — 연결 문자열 env 가 있는 배포 환경에서만 켜진다.
+# 로컬 PC 에는 env 가 없으므로 이 블록은 그냥 건너뛰고, 서버는 정상 기동한다.
+if os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING"):
+    try:
+        from azure.monitor.opentelemetry import configure_azure_monitor
+        configure_azure_monitor()
+    except Exception as exc:  # 모니터링이 실패해도 서버 기동을 막으면 안 된다
+        logging.getLogger(__name__).warning("App Insights 초기화 실패(기동 계속): %s", exc)
 
+# FastAPI 서버 객체 생성 — 이 변수 이름(app)을 uvicorn 이 찾는다
 app = FastAPI(title="mlnode-api-gateway")
 
+# CORS: 브라우저가 다른 도메인(프론트엔드 주소)에서 이 서버를 호출하도록 허용하는 설정.
+# 허용 주소 목록은 settings.ALLOWED_ORIGINS (환경변수 ALLOWED_ORIGINS)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
@@ -25,66 +38,14 @@ app.add_middleware(
 )
 
 
+# 미들웨어: 모든 요청이 거쳐가는 공통 처리. 여기서는 응답 헤더에 요청 고유번호를
+# 붙여서, 문제가 생겼을 때 로그에서 "어느 요청이었는지" 추적할 수 있게 한다.
 @app.middleware("http")
 async def request_id(request: Request, call_next):
-    rid = str(uuid.uuid4())
-    response = await call_next(request)
-    response.headers["X-Request-ID"] = rid
+    response = await call_next(request)  # 실제 처리(라우터)를 먼저 실행하고
+    response.headers["X-Request-ID"] = str(uuid.uuid4())  # 응답에 고유번호를 붙인다
     return response
 
 
-async def require_key(x_api_key: str | None = Header(default=None)):
-    if settings.API_KEY_REQUIRED and x_api_key != settings.API_KEY:
-        raise HTTPException(401, "invalid api key")
-
-
-@app.get("/healthz")
-async def healthz():
-    return {"status": "ok"}
-
-
-@app.post("/v1/sessions", dependencies=[Depends(require_key)])
-async def create_session(body: SessionCreateIn | None = None):
-    return session_repository.create(body.session_id if body else None)
-
-
-@app.get("/v1/sessions/{session_id}", dependencies=[Depends(require_key)])
-async def get_session(session_id: str):
-    state = session_repository.snapshot(session_id)
-    if state is None:
-        raise HTTPException(404, "session not found")
-    return state
-
-
-@app.post("/v1/classify", dependencies=[Depends(require_key)])
-async def classify(body: ClassifyIn):
-    return await services.classifier.classify_one(body.text, body.threshold)
-
-
-@app.post("/v1/batch-classify", dependencies=[Depends(require_key)])
-async def batch_classify(body: BatchClassifyIn):
-    return await services.classifier.classify_batch(body.texts, body.threshold)
-
-
-@app.post("/v1/respond", dependencies=[Depends(require_key)])
-async def respond(body: RespondIn):
-    context = RespondRequestContext.from_body(body)
-
-    if context.requires_stt:
-        # Keep STT inside the streaming path so clients can receive explicit
-        # stt processing/completed/error events instead of a silent fallback.
-        return StreamingResponse(
-            dag.stt_then_respond_stream(context.session_id, context.input_meta, context.tts, context.llm),
-            media_type="text/event-stream",
-        )
-
-    if not context.has_text:
-        return StreamingResponse(
-            dag.input_pending_stream(context.session_id, context.input_meta, context.tts),
-            media_type="text/event-stream",
-        )
-
-    return StreamingResponse(
-        dag.respond_stream(context.text or "", context.session_id, context.input_meta, context.tts, context.llm),
-        media_type="text/event-stream",
-    )
+# api.py 에 정의된 URL 들(/healthz, /v1/...)을 서버에 등록
+app.include_router(router)

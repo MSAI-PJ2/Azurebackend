@@ -1,0 +1,3 @@
+# local dev/test only; not installed into the container image
+-r requirements.txt
+pytest
