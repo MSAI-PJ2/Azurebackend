@@ -88,6 +88,28 @@ x-api-key: <GATEWAY_API_KEY>
 {"detail":"invalid api key"}
 ```
 
+### 인증 모드 (AUTH_MODE)
+
+```text
+api_key(기본)  x-api-key 헤더 검사. current_user = "anonymous"
+entra          Microsoft Entra External ID 의 JWT 검증 (코드 구현됨, 설정만으로 켜짐)
+```
+
+`AUTH_MODE=entra` 로 켜면 헤더가 바뀐다 — 프론트가 로그인 후 받은 액세스 토큰을 첨부:
+
+```http
+Authorization: Bearer <JWT>
+```
+
+서버는 서명(JWKS)·issuer·audience·만료를 검증하고 user_id(oid)를 추출한다.
+필요 환경변수: `ENTRA_CLIENT_ID` + (`ENTRA_TENANT_ID` 또는 `ENTRA_ISSUER`).
+
+```text
+토큰 없음/형식 오류      -> 401 {"detail":"missing bearer token"}
+서명·만료·aud/iss 불일치 -> 401 {"detail":"invalid or expired token"}
+ENTRA_* 설정 누락        -> 500 {"detail":"entra auth misconfigured: ..."}
+```
+
 ## 4. Health
 
 ```http
