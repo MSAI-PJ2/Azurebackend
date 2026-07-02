@@ -678,6 +678,8 @@ DOCINTEL_KEY=<set-in-azure-secret-or-local-env>
 ```
 
 - 상담 입력 텍스트 = `speaker == "나"` 인 발화들을 개행으로 연결한 것.
+- OCR 성공 후에도 `meta` 이벤트·세션 턴의 `input.input_type` 은 `"image"` 로 유지된다
+  (STT 가 `transcript` 로 바꾸는 것과 다름 — 입력 원천을 그대로 기록).
 - "나" 발화가 없으면 `no_user_messages` 로 input_required 처리.
 - 세션 턴에는 `input.image` 에서 원본 base64(`data`)를 제거하고 저장한다
   (Cosmos 문서 크기 한도 보호). `input.ocr.conversation` 은 보존된다.
