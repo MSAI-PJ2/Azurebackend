@@ -1,38 +1,49 @@
-"""환경변수 설정. 새 항목은 .env.example 에도 기록한다."""
+"""[설정] 서버의 모든 조정값을 환경변수에서 읽는 곳.
+
+환경변수 = 코드 밖(.env 파일이나 Azure 설정)에서 주입하는 값. 키/주소처럼
+환경마다 다르거나 비밀인 값을 코드에 하드코딩하지 않기 위해 쓴다.
+os.getenv("이름", "기본값") = 환경변수가 없으면 기본값 사용.
+새 설정을 추가하면 .env.example 에도 같이 기록해 팀원이 알 수 있게 한다.
+"""
 import os
 
 
 def _bool(name: str, default: bool = False) -> bool:
+    """환경변수는 전부 문자열이라, "true"/"1" 을 파이썬 불리언으로 바꿔 준다."""
     value = os.getenv(name)
     return default if value is None else value.strip().lower() in ("true", "1")
 
 
-# 분류기 (내부 cogdist Container App)
+# --- 분류기: 인지왜곡 분류 모델이 떠 있는 내부 컨테이너 주소 ---
 KLUE_API_URL = os.getenv("KLUE_API_URL", "http://cogdist:8000")
 REQUEST_TIMEOUT_SECONDS = float(os.getenv("REQUEST_TIMEOUT_SECONDS", "30"))
 
-# 인증 / CORS — AUTH_MODE: api_key(현행) | entra(도입 예정, auth.py 가이드)
+# --- 인증 / CORS ---
+# API_KEY_REQUIRED=true 면 모든 /v1 요청에 x-api-key 헤더가 있어야 한다
 API_KEY = os.getenv("API_KEY", "")
 API_KEY_REQUIRED = _bool("API_KEY_REQUIRED", False)
+# AUTH_MODE: api_key(현행) | entra(로그인 도입 예정 — auth.py 의 가이드 참고)
 AUTH_MODE = os.getenv("AUTH_MODE", "api_key").strip().lower()
+# 브라우저에서 이 서버를 호출할 수 있는 프론트엔드 주소 목록 (쉼표 구분)
 ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.getenv("ALLOWED_ORIGINS", "http://127.0.0.1:5173,http://localhost:5173").split(",")
     if origin.strip()
 ]
 
-# Azure Content Safety
+# --- Azure Content Safety: 위험(자살/자해 등) 발화 탐지 서비스 ---
 CONTENT_SAFETY_ENABLED = _bool("CONTENT_SAFETY_ENABLED", False)
 CONTENT_SAFETY_ENDPOINT = os.getenv("CONTENT_SAFETY_ENDPOINT", "")
 CONTENT_SAFETY_KEY = os.getenv("CONTENT_SAFETY_KEY", "")
-CONTENT_SAFETY_THRESHOLD = int(os.getenv("CONTENT_SAFETY_THRESHOLD", "2"))  # severity 0/2/4/6
+# 위험 점수(severity)가 이 값 이상이면 차단. Azure 기준 0/2/4/6 단계
+CONTENT_SAFETY_THRESHOLD = int(os.getenv("CONTENT_SAFETY_THRESHOLD", "2"))
 CONTENT_SAFETY_TIMEOUT = float(os.getenv("CONTENT_SAFETY_TIMEOUT", "5"))
 
-# RAG
+# --- RAG: 검색된 참고자료 중 프롬프트에 넣을 문서 개수 ---
 RERANK_TOP_N = int(os.getenv("RERANK_TOP_N", "4"))
 
-# 세션 저장소 — memory(개발/테스트) | cosmos(운영)
+# --- 세션(대화 기록) 저장소: memory(개발/테스트용, 서버 재시작 시 소멸) | cosmos(운영 DB) ---
 SESSION_REPOSITORY = os.getenv("SESSION_REPOSITORY", "memory")
-SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "3600"))
-SESSION_MAX_TURNS = int(os.getenv("SESSION_MAX_TURNS", "20"))
-SESSION_CONTEXT_TURNS = int(os.getenv("SESSION_CONTEXT_TURNS", "6"))
+SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "3600"))      # 세션 유효시간(초)
+SESSION_MAX_TURNS = int(os.getenv("SESSION_MAX_TURNS", "20"))            # 세션당 최대 저장 턴 수
+SESSION_CONTEXT_TURNS = int(os.getenv("SESSION_CONTEXT_TURNS", "6"))     # LLM 에 주는 최근 대화 수
