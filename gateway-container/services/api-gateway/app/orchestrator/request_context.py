@@ -1,15 +1,10 @@
-"""/v1/respond 요청 정규화 컨텍스트.
-
-전송 형태(text/transcript/audio) 판단을 respond_flow 밖으로 분리한다.
-외부 계약은 contracts/requests.py, 이 파일은 그 계약을 오케스트레이션이 쓰는
-내부 형태로 바꾼다. 로그인 도입 시 user_id 필드를 여기에 추가하면 된다.
-"""
+"""/v1/respond 요청 정규화 — 입력 형태(text/transcript/audio) 판단을 흐름 밖으로 분리."""
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
 
-from ..contracts.requests import RespondIn
+from ..contracts import RespondIn
 
 DEFAULT_LANGUAGE = "ko-KR"
 
@@ -41,46 +36,35 @@ class RespondRequestContext:
         return bool(self.input_meta.get("audio")) and not self.has_text
 
     @property
-    def stt_options(self) -> dict[str, Any]:
-        return dict(self.input_meta.get("stt") or {})
-
-    @property
     def audio(self) -> dict[str, Any]:
         return dict(self.input_meta.get("audio") or {})
 
     @property
     def language(self) -> str:
-        return self.stt_options.get("language") or self.audio.get("language") or DEFAULT_LANGUAGE
+        stt = self.input_meta.get("stt") or {}
+        return stt.get("language") or self.audio.get("language") or DEFAULT_LANGUAGE
 
     @property
     def stt_provider(self) -> str:
-        return self.stt_options.get("provider") or "azure"
+        return (self.input_meta.get("stt") or {}).get("provider") or "azure"
 
     def with_transcript(self, result: dict[str, Any]) -> "RespondRequestContext":
-        """STT 성공 후 transcript 를 반영한 새 컨텍스트를 만든다."""
-        language = result.get("language") or self.language
-        stt_options = self.stt_options
+        """STT 성공 결과를 반영한 새 컨텍스트."""
         input_meta = {
             **self.input_meta,
             "input_type": "transcript",
             "stt": {
-                **stt_options,
+                **(self.input_meta.get("stt") or {}),
                 "provider": result.get("provider"),
-                "language": language,
+                "language": result.get("language") or self.language,
                 "transcript": result.get("transcript"),
                 "confidence": result.get("confidence"),
                 "recognition_status": result.get("recognition_status"),
             },
         }
-        return RespondRequestContext(
-            session_id=self.session_id,
-            text=result.get("transcript"),
-            input_meta=input_meta,
-            tts=self.tts,
-            llm=self.llm,
-        )
+        return RespondRequestContext(self.session_id, result.get("transcript"),
+                                     input_meta, self.tts, self.llm)
 
 
 def default_text_input_meta(input_meta: dict[str, Any] | None = None) -> dict[str, Any]:
-    """/v1/respond 텍스트 요청의 기존 기본 input 형태를 유지한다."""
     return input_meta or {"input_type": "text"}

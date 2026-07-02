@@ -1,8 +1,6 @@
-﻿# 로컬 api-gateway compose입니다. 리포지토리 루트에서 아래 명령으로 실행합니다.
-# docker compose -f gateway-container/docker-compose.yml up --build api-gateway
-#
-# 전체 로컬 cogdist 스택을 실행하려면 별도 cogdist 서비스/모델 경로가 필요합니다.
-# 해당 리소스는 gateway-container 폴더에 포함하지 않습니다.
+# 로컬 api-gateway compose. 리포지토리 루트에서:
+#   docker compose -f gateway-container/docker-compose.yml up --build api-gateway
+# Azure 서비스 키는 .env 로 전달한다 (.env.example 참고).
 services:
   api-gateway:
     build:
@@ -11,17 +9,19 @@ services:
     container_name: mlnode-api-gateway
     environment:
       KLUE_API_URL: ${KLUE_API_URL:-http://host.docker.internal:8000}
-      REQUEST_TIMEOUT_SECONDS: "30"
-      API_KEY_REQUIRED: "false"
-      ALLOWED_ORIGINS: "http://127.0.0.1:5173,http://localhost:5173"
+      API_KEY_REQUIRED: ${API_KEY_REQUIRED:-false}
+      API_KEY: ${API_KEY:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://127.0.0.1:5173,http://localhost:5173}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-}
+      AZURE_SEARCH_ENDPOINT: ${AZURE_SEARCH_ENDPOINT:-}
+      AZURE_SEARCH_API_KEY: ${AZURE_SEARCH_API_KEY:-}
+      AZURE_SEARCH_INDEX: ${AZURE_SEARCH_INDEX:-}
+      AZURE_SPEECH_KEY: ${AZURE_SPEECH_KEY:-}
       CONTENT_SAFETY_ENABLED: ${CONTENT_SAFETY_ENABLED:-false}
       CONTENT_SAFETY_ENDPOINT: ${CONTENT_SAFETY_ENDPOINT:-}
       CONTENT_SAFETY_KEY: ${CONTENT_SAFETY_KEY:-}
-      CONTENT_SAFETY_THRESHOLD: ${CONTENT_SAFETY_THRESHOLD:-2}
-      LLM_PROVIDER: ${LLM_PROVIDER:-local}
-      # llm_client.py 가 읽는 환경변수명은 LOCAL_LLM_BASE_URL 이다
-      LOCAL_LLM_BASE_URL: ${LOCAL_LLM_BASE_URL:-http://host.docker.internal:8001/v1}
-      LOCAL_LLM_MODEL: ${LOCAL_LLM_MODEL:-local-model}
-      LOCAL_LLM_API_KEY: ${LOCAL_LLM_API_KEY:-dummy}
+      SESSION_REPOSITORY: ${SESSION_REPOSITORY:-memory}
     ports:
       - "${GATEWAY_HOST_PORT:-8080}:8080"

@@ -1,28 +1,22 @@
-"""LLM 어댑터 — Azure OpenAI / 로컬 OpenAI 호환 서버 (common/llm_client.py).
-
-운영 경로는 chat_stream_async: FastAPI 이벤트루프를 막지 않는 async 스트리밍.
-요청 옵션(llm.max_completion_tokens 등)은 여기서 LLMClient kwargs 로 변환한다.
-"""
-from typing import AsyncIterator, Iterator
+"""LLM 어댑터 (Azure OpenAI, common/llm_client.py). 클라이언트는 첫 호출 시 생성(env 지연 검증)."""
+from typing import AsyncIterator
 
 from common.llm_client import LLMClient
 
 
 class LlmAdapter:
     def __init__(self):
-        self._client = LLMClient()
+        self._client: LLMClient | None = None
 
     async def chat_stream_async(self, messages: list[dict], options: dict | None = None) -> AsyncIterator[str]:
+        if self._client is None:
+            self._client = LLMClient()
         async for token in self._client.chat_stream_async(messages, **llm_options(options)):
             yield token
 
-    def chat_stream(self, messages: list[dict], options: dict | None = None) -> Iterator[str]:
-        """동기 스트리밍 (스크립트/legacy 용 — 운영 경로는 chat_stream_async)."""
-        return self._client.chat_stream(messages, **llm_options(options))
-
 
 def llm_options(options: dict | None) -> dict:
-    """요청 레벨 LLM 옵션을 LLMClient kwargs 로 변환한다."""
+    """요청 레벨 옵션(max_completion_tokens/temperature) → LLMClient kwargs."""
     kwargs: dict = {}
     if not options:
         return kwargs

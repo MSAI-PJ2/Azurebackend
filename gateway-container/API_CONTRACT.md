@@ -528,7 +528,6 @@ session_id=cosmos-session-smoke-1
 현재 Gateway는 `/v1/respond` 내부에서 Azure AI Search를 호출한다.
 
 ```text
-RETRIEVE_PROVIDER=azure
 AZURE_SEARCH_ENDPOINT=https://cbt-rag-search.search.windows.net
 AZURE_SEARCH_INDEX=cbt-rag-index
 AZURE_SEARCH_API_KEY=secretref:azure-search-key
@@ -586,7 +585,6 @@ blocked/self_harm: crisis 이벤트 반환 후 done
 현재 Gateway는 Azure OpenAI를 사용한다.
 
 ```text
-LLM_PROVIDER=azure_openai 또는 azure
 AZURE_OPENAI_ENDPOINT=https://cbt-openai-00.openai.azure.com/
 AZURE_OPENAI_DEPLOYMENT=gpt-4.1-mini
 AZURE_OPENAI_API_VERSION=2024-12-01-preview
