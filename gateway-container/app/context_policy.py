@@ -13,7 +13,7 @@ prompt_strategy 값은 prompts.py 의 PROMPT_STRATEGIES 키와 짝이다 —
 """
 from dataclasses import dataclass
 
-from .. import settings
+from . import settings
 
 
 @dataclass(frozen=True)  # frozen=True: 만든 뒤 값 변경 불가(실수 방지용 읽기 전용 묶음)

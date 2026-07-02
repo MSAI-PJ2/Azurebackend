@@ -1,4 +1,4 @@
-"""[OCR 통신] 채팅 캡쳐 이미지 → Azure Document Intelligence → 대화 로그 재구성.
+"""[문서 창구] 채팅 캡쳐 이미지 → 대화 로그 (OCR) — Azure Document Intelligence.
 
 ┌─ 출처 ────────────────────────────────────────────────────────────────┐
 │ 원본: 리포지토리 루트 di/kakao_ocr_pipeline.py (DI 담당 팀원 작업물).   │
@@ -14,14 +14,15 @@
 │ 개조 내용(게이트웨이 통합용):                                          │
 │   - 파일 경로 대신 bytes 입력 (업로드된 이미지를 바로 처리)             │
 │   - print/JSON 파일 저장 제거, dict 반환 (SSE 이벤트·세션 저장용)       │
-│   - dotenv 제거 (게이트웨이는 환경변수를 직접 읽음), 클라이언트 재사용   │
+│   - dotenv 제거 (환경변수 직접 읽음), 클라이언트 재사용                 │
 └───────────────────────────────────────────────────────────────────────┘
 
 필요 환경변수: DOCINTEL_ENDPOINT, DOCINTEL_KEY
-호출측: app/services/document_intelligence.py (블로킹 SDK → to_thread 오프로딩)
+DI SDK 는 블로킹이라 어댑터가 asyncio.to_thread 로 오프로딩한다.
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import os
 import re
@@ -46,7 +47,7 @@ def _di_client():
 
 
 def resolve_image_bytes(image: dict) -> bytes:
-    """요청의 image 필드에서 실제 이미지 바이트를 꺼낸다 (speech_client 의 오디오 패턴과 동일)."""
+    """요청의 image 필드에서 실제 이미지 바이트를 꺼낸다 (speech.py 의 오디오 패턴과 동일)."""
     kind = image.get("kind")
     if kind == "base64":
         data = image.get("data")
@@ -161,3 +162,9 @@ def extract_conversation(image: dict, sender_names: list[str] | None = None) -> 
         return {**base, "status": "completed", "conversation": conversation}
     except Exception as exc:
         return {**base, "status": "error", "conversation": [], "error": str(exc)[:300]}
+
+
+class DocumentAdapter:
+    async def extract_conversation(self, image: dict | None, sender_names: list[str] | None = None) -> dict:
+        """이미지 → {status, conversation:[{speaker, content, time}], error?} (ocr 이벤트 형식)."""
+        return await asyncio.to_thread(extract_conversation, image, sender_names)

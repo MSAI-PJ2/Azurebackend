@@ -30,7 +30,7 @@ def lookup_regional_hotlines(region: str | None) -> list[dict]:
     2. 입력: 프론트가 요청의 metadata.region 에 지역명을 넣어 보낸다
        → respond_stream 에서 input_meta["metadata"] 로 꺼낼 수 있다
     3. 구현: 이 함수에서 region 으로 Cosmos 를 조회해 목록 반환.
-       Cosmos SDK 는 블로킹(기다리는 동안 서버가 멈춤)이므로 session/cosmos_repository.py
+       Cosmos SDK 는 블로킹(기다리는 동안 서버가 멈춤)이므로 session.py 의 CosmosSessionRepository
        처럼 asyncio.to_thread 로 감싸고, 이 함수와 crisis_payload 를 async 로 바꾼 뒤
        respond_stream 의 호출부에 await 를 붙인다.
     4. 안전: 조회 실패·미등록 지역이면 반드시 빈 목록을 반환할 것 —

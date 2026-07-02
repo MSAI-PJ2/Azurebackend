@@ -4,7 +4,7 @@ SSE(Server-Sent Events) = 서버가 응답을 끊지 않고 "data: {...}" 줄을
 흘려보내는 방식. 프론트는 도착하는 이벤트를 type 필드로 구분해 화면에 반영한다.
     meta(분류 결과) → chunks(참고자료) → token(답변 글자들) → done(끝)
 이벤트의 종류/필드는 API_CONTRACT.md 와 1:1 — 여기를 바꾸면 프론트도 바꿔야 한다.
-DB 에 저장하는 대화 기록은 session/turns.py — 역할이 다르므로 섞지 않는다.
+DB 에 저장하는 대화 기록은 session.py 의 턴 빌더 — 역할이 다르므로 섞지 않는다.
 """
 import json
 

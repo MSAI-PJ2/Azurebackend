@@ -44,7 +44,7 @@ async def current_user(authorization: str | None = Header(default=None)) -> str:
        구현 전에는 아래 501 로 즉시 실패하고, 구현 후에는 자동으로 활성화된다.
        user_id 를 세션과 연결하려면 라우터에서 user_id: str = Depends(current_user) 로
        받아 오케스트레이터에 전달하고, 세션 저장/조회 조건에 포함시켜
-       "내 세션만 접근"을 보장한다 (session/ 참고).
+       "내 세션만 접근"을 보장한다 (session.py 참고).
     5. require_api_key 는 서버 간 내부 호출용으로만 남기거나 제거.
     ─────────────────────────────────────────────────────────────────────
     """

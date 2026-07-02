@@ -1,12 +1,13 @@
-"""[음성 통신] Azure Speech 로 음성→텍스트(STT), 텍스트→음성(TTS)을 실제 수행한다.
+"""[음성 창구] 음성→텍스트(STT), 텍스트→음성(TTS) — Azure Speech.
 
-app/services/speech.py(어댑터)가 이 함수들을 사용한다. 여기 함수들은 전부
-동기(블로킹)이므로 어댑터가 asyncio.to_thread 로 감싸서 호출한다.
+SDK 는 블로킹(동기)이라 어댑터가 모든 호출을 asyncio.to_thread 로 별도 스레드에
+맡긴다 — 음성 변환 중에도 서버가 다른 요청을 처리할 수 있게.
 필요 환경변수: AZURE_SPEECH_KEY, AZURE_SPEECH_REGION(기본 koreacentral),
 AZURE_SPEECH_DEFAULT_VOICE(기본 ko-KR-SunHiNeural).
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import io
 import logging
@@ -95,12 +96,8 @@ def _recognize_once(audio: dict) -> speechsdk.SpeechRecognitionResult:
 
 
 def transcribe_audio_detailed(audio: dict) -> dict:
-    """STT 실행 결과를 SSE `stt` 이벤트 형식(dict)으로 반환한다.
-
-    세 가지 경우: completed(성공, transcript 포함) / no_match(음성 못 알아들음) /
-    error(그 외 실패). 예외가 나도 밖으로 던지지 않고 error dict 로 감싼다 —
-    STT 실패가 응답 스트림 전체를 죽이면 안 되기 때문.
-    """
+    """STT 결과를 SSE `stt` 이벤트 형식(dict)으로 반환. 예외도 error dict 로 감싼다 —
+    STT 실패가 응답 스트림 전체를 죽이면 안 되기 때문."""
     base = {"provider": "azure", "language": audio.get("language") or "ko-KR",
             "mime_type": audio.get("mime_type"), "kind": audio.get("kind")}
     try:
@@ -119,8 +116,7 @@ def transcribe_audio_detailed(audio: dict) -> dict:
 
 
 def synthesize_speech_base64(text: str, voice_name: str | None = None) -> str:
-    """텍스트 → 음성 합성 → base64 문자열(WAV)로 반환. 실패 시 예외를 던진다
-    (호출측 어댑터가 잡아서 error payload 로 바꾼다)."""
+    """텍스트 → 음성 합성 → base64 문자열(WAV). 실패 시 예외 (어댑터가 error dict 로 변환)."""
     synth = speechsdk.SpeechSynthesizer(speech_config=_speech_config(voice_name), audio_config=None)
     result = synth.speak_text_async(_strip_markdown(text)).get()
     if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
@@ -130,10 +126,31 @@ def synthesize_speech_base64(text: str, voice_name: str | None = None) -> str:
 
 
 def _strip_markdown(text: str) -> str:
-    """음성으로 읽으면 어색한 표기(굵게 표시 **, 제목 #, 링크, 이모지)를 제거한다."""
+    """음성으로 읽으면 어색한 표기(굵게 **, 제목 #, 링크, 이모지)를 제거한다."""
     text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
     text = re.sub(r"#{1,6}\s*", "", text)
     text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
     text = re.sub("[\U00010000-\U0010ffff\U0001F300-\U0001F9FF"
                   "\U00002700-\U000027BF\U0000FE00-\U0000FE0F]+", "", text)
     return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+class SpeechAdapter:
+    async def transcribe_audio(self, audio: dict | None) -> dict:
+        """음성 → 텍스트. 성공/실패 정보가 담긴 dict 를 돌려준다 (stt 이벤트 형식)."""
+        return await asyncio.to_thread(transcribe_audio_detailed, audio)
+
+    async def synthesize_tts(self, text: str, tts_options: dict | None) -> dict:
+        """텍스트 → 음성(base64 WAV). 실패해도 예외 대신 error dict —
+        음성 합성 실패 때문에 이미 보낸 텍스트 답변 스트림이 끊기면 안 되기 때문."""
+        voice = (tts_options or {}).get("voice")
+        try:
+            audio_b64 = await asyncio.to_thread(synthesize_speech_base64, text, voice)
+            return {"status": "completed", "provider": "azure", "text": text,
+                    "mime_type": "audio/wav", "format": "wav",
+                    "audio": {"kind": "base64", "data": audio_b64, "mime_type": "audio/wav"},
+                    "audio_base64": audio_b64,  # 과거 프론트 호환용 별칭 (신규는 audio.data 사용)
+                    "options": tts_options}
+        except Exception as exc:
+            return {"status": "error", "provider": "azure", "text": text,
+                    "error": str(exc)[:300], "options": tts_options}

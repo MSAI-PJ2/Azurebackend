@@ -8,29 +8,128 @@ respond_stream 한 턴의 순서:
     5. 평상시: 참고자료 정렬 → 프롬프트 구성 → LLM 답변을 글자 단위로 스트리밍
     6. (옵션) 답변을 음성으로 합성 → 대화 기록 저장 → done
 
-읽는 법 — 이 파일의 함수들은 "제너레이터"다:
+읽는 법 — 이 파일의 스트림 함수들은 "제너레이터"다:
     yield sse(...) = "이벤트 하나를 프론트로 지금 내보내라". return 처럼 끝나지 않고
     다음 줄로 계속 진행하므로, 위에서 아래로 읽으면 프론트가 받는 이벤트 순서와 같다.
     await = Azure 응답을 기다리는 동안 다른 요청 처리를 양보한다는 표시.
-"""
-import asyncio
 
-from ..events import (
+파일 앞부분의 RespondRequestContext 는 "이 요청이 텍스트인가 음성인가 이미지인가"를
+판단하는 요청 정리 계층 — api.py 가 요청을 받자마자 이걸 만들어 분기한다.
+"""
+from __future__ import annotations
+
+import asyncio
+from dataclasses import dataclass
+from typing import Any
+
+from . import context_policy, crisis
+from .contracts import RespondIn
+from .events import (
     INPUT_REQUIRED_OCR_MESSAGE, INPUT_REQUIRED_STT_MESSAGE, INPUT_REQUIRED_TEXT_MESSAGE,
     chunks_event, done_event, input_required_event, meta_event,
     ocr_processing_event, ocr_result_event, sse,
     stt_processing_event, stt_result_event, token_event, tts_event,
 )
-from ..prompts import build_llm_messages
-from ..ranking import rerank
-from ..services import services
-from ..session import session_repository
-from ..session.turns import (
-    assistant_turn, crisis_turn, input_pending_turn, ocr_failed_turn, stt_failed_turn, user_turn,
+from .prompts import build_llm_messages
+from .ranking import rerank
+from .services import services
+from .session import (
+    assistant_turn, crisis_turn, input_pending_turn, ocr_failed_turn,
+    session_repository, stt_failed_turn, user_turn,
 )
-from . import context_policy, crisis
-from .request_context import RespondRequestContext, default_text_input_meta
 
+DEFAULT_LANGUAGE = "ko-KR"
+
+
+# ---------------------------------------------------------------------------
+# 요청 정리 — 입력 형태(text/transcript/audio/image) 판단을 흐름 밖으로 분리
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)  # 읽기 전용 데이터 묶음 — 흐름 중간에 값이 바뀌는 실수를 막는다
+class RespondRequestContext:
+    session_id: str | None
+    text: str | None               # 실제 처리할 텍스트 (text 또는 stt.transcript 에서 온 것)
+    input_meta: dict[str, Any]     # 입력 형태 기록 (세션 저장·meta 이벤트용)
+    tts: dict[str, Any] | None = None
+    llm: dict[str, Any] | None = None
+
+    @classmethod
+    def from_body(cls, body: RespondIn) -> "RespondRequestContext":
+        """프론트 요청(RespondIn) → 내부 컨텍스트로 변환."""
+        return cls(
+            session_id=body.session_id,
+            text=body.effective_text(),
+            input_meta=body.input_meta(),
+            tts=body.tts.model_dump(exclude_none=True) if body.tts else None,
+            llm=body.llm.model_dump(exclude_none=True) if body.llm else None,
+        )
+
+    # @property = 함수를 변수처럼 읽게 해 주는 문법 (context.has_text 처럼 괄호 없이 사용)
+
+    @property
+    def has_text(self) -> bool:
+        """처리할 텍스트가 있는가?"""
+        return bool((self.text or "").strip())
+
+    @property
+    def requires_stt(self) -> bool:
+        """오디오만 있고 텍스트가 없어서 음성 인식(STT)이 먼저 필요한가?"""
+        return bool(self.input_meta.get("audio")) and not self.has_text
+
+    @property
+    def requires_ocr(self) -> bool:
+        """채팅 캡쳐 이미지만 있고 텍스트가 없어서 OCR 이 먼저 필요한가?"""
+        return bool(self.input_meta.get("image")) and not self.has_text
+
+    @property
+    def audio(self) -> dict[str, Any]:
+        return dict(self.input_meta.get("audio") or {})
+
+    @property
+    def image(self) -> dict[str, Any]:
+        return dict(self.input_meta.get("image") or {})
+
+    @property
+    def sender_names(self) -> list[str]:
+        """OCR 화자 판별 보정용 상대 이름 목록 (요청의 ocr.sender_names)."""
+        return list((self.input_meta.get("ocr") or {}).get("sender_names") or [])
+
+    @property
+    def language(self) -> str:
+        """인식 언어: stt.language > audio.language > 기본값(ko-KR) 순서로 고른다."""
+        stt = self.input_meta.get("stt") or {}
+        return stt.get("language") or self.audio.get("language") or DEFAULT_LANGUAGE
+
+    @property
+    def stt_provider(self) -> str:
+        return (self.input_meta.get("stt") or {}).get("provider") or "azure"
+
+    def with_transcript(self, result: dict[str, Any]) -> "RespondRequestContext":
+        """STT 성공 후: 전사문을 text 로 넣고 input_type 을 transcript 로 바꾼 새 컨텍스트."""
+        input_meta = {
+            **self.input_meta,
+            "input_type": "transcript",
+            "stt": {
+                **(self.input_meta.get("stt") or {}),
+                "provider": result.get("provider"),
+                "language": result.get("language") or self.language,
+                "transcript": result.get("transcript"),
+                "confidence": result.get("confidence"),
+                "recognition_status": result.get("recognition_status"),
+            },
+        }
+        return RespondRequestContext(self.session_id, result.get("transcript"),
+                                     input_meta, self.tts, self.llm)
+
+
+def default_text_input_meta(input_meta: dict[str, Any] | None = None) -> dict[str, Any]:
+    """input_meta 없이 호출된 경우(내부 호출 등)의 기본 형태."""
+    return input_meta or {"input_type": "text"}
+
+
+# ---------------------------------------------------------------------------
+# 입력 형태별 진입 스트림 — 성공하면 전부 respond_stream(핵심 흐름)으로 합류한다
+# ---------------------------------------------------------------------------
 
 async def stt_then_respond_stream(session_id=None, input_meta=None, tts=None, llm=None):
     """오디오 입력 흐름: 음성→텍스트(STT) 변환 후, 성공하면 일반 상담 흐름으로 넘어간다."""
@@ -62,9 +161,8 @@ async def stt_then_respond_stream(session_id=None, input_meta=None, tts=None, ll
 async def ocr_then_respond_stream(session_id=None, input_meta=None, tts=None, llm=None):
     """채팅 캡쳐 이미지 입력: OCR → ocr 이벤트 → '나' 발화를 모아 일반 상담 흐름으로.
 
-    STT 흐름(stt_then_respond_stream)과 대칭 구조. OCR 파이프라인 원본은
-    리포 루트 di/kakao_ocr_pipeline.py (팀원 작업물) — 게이트웨이는 그 복제본
-    services/document/kakao_ocr.py 를 사용한다.
+    STT 흐름과 대칭 구조. OCR 파이프라인 원본은 리포 루트 di/kakao_ocr_pipeline.py
+    (팀원 작업물) — 게이트웨이는 그 복제본 services/document_ocr.py 를 사용한다.
     """
     context = RespondRequestContext(session_id, None, input_meta or {}, tts, llm)
     session = await session_repository.ensure(context.session_id)

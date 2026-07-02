@@ -8,7 +8,7 @@ Azure SDK 사용법이 바뀌어도 어댑터 파일 하나만 고치면 된다.
 """
 from .classifier import ClassifierAdapter
 from .content_safety import SafetyAdapter
-from .document_intelligence import DocumentAdapter
+from .document_ocr import DocumentAdapter
 from .llm import LlmAdapter
 from .retriever import RetrieverAdapter
 from .speech import SpeechAdapter

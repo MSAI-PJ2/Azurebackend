@@ -5,8 +5,7 @@
 """
 import pytest
 
-from app import settings
-from app.orchestrator import context_policy
+from app import context_policy, settings
 from app.ranking import rerank
 
 CANDS = [

@@ -4,7 +4,7 @@
 말투, 금지사항이 전부 여기서 결정된다. 답변 스타일을 바꾸고 싶으면 코드가 아니라
 아래 문자열들(PERSONA / STYLE_RULES / SAFETY_RULES / LABEL_GUIDANCE)만 고치면 된다.
 
-어떤 발화에 어떤 전략(build_xxx 함수)을 쓸지는 orchestrator/context_policy.py 의
+어떤 발화에 어떤 전략(build_xxx 함수)을 쓸지는 context_policy.py 의
 POLICIES 가 라벨→전략 이름으로 정한다. 두 파일은 짝으로 움직인다.
 """
 

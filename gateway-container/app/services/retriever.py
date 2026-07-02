@@ -1,19 +1,19 @@
-"""[검색 통신] Azure AI Search 에서 상담 기법 문서를 검색한다 (RAG 의 "검색" 부분).
+"""[검색 창구] 상담 기법 참고자료 검색(RAG) — Azure AI Search.
 
-app/services/retriever.py(어댑터)가 사용한다. 반환 계약:
-    retrieve(text, k) -> [{id, content, score, metadata}, ...]  (score 높을수록 관련 ↑)
-
+검색 계약: retrieve(text, k) -> [{id, content, score, metadata}, ...] (score 높을수록 관련 ↑)
 필요 환경변수: AZURE_SEARCH_ENDPOINT / AZURE_SEARCH_API_KEY / AZURE_SEARCH_INDEX.
-선택 환경변수: AZURE_SEARCH_CONTENT_FIELD(본문 필드명, 기본 content),
-AZURE_SEARCH_ID_FIELD(기본 id), AZURE_SEARCH_SEMANTIC_CONFIG(시맨틱 랭킹 설정명),
-AZURE_SEARCH_SELECT_FIELDS(가져올 필드 목록, 쉼표 구분).
+선택 환경변수: AZURE_SEARCH_CONTENT_FIELD(기본 content), AZURE_SEARCH_ID_FIELD(기본 id),
+AZURE_SEARCH_SEMANTIC_CONFIG(설정 시 시맨틱 랭킹), AZURE_SEARCH_SELECT_FIELDS(csv).
+
+검색 SDK 는 동기(블로킹)라서 어댑터가 asyncio.to_thread 로 별도 스레드에 맡긴다 —
+respond_flow 의 gather 에서 안전검사·분류와 "동시에" 실행되기 위함.
+클라이언트는 첫 호출 때 생성 (키 없는 로컬 테스트에서도 서버가 뜨게).
 """
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Any
-
-from .types import RetrievedDoc
 
 
 class AzureAiSearchRetriever:
@@ -58,7 +58,7 @@ class AzureAiSearchRetriever:
             kwargs["semantic_configuration_name"] = self.semantic_config
         return self.client.search(**kwargs)
 
-    def retrieve(self, text: str, k: int = 8) -> list[RetrievedDoc]:
+    def retrieve(self, text: str, k: int = 8) -> list[dict]:
         query = (text or "").strip()
         if not query:
             return []
@@ -71,7 +71,7 @@ class AzureAiSearchRetriever:
                 raise
             results = self._search(query, k, semantic=False)
 
-        docs: list[RetrievedDoc] = []
+        docs: list[dict] = []
         for idx, row in enumerate(results, start=1):
             doc = dict(row)
             content = str(doc.get(self.content_field) or "").strip()
@@ -86,3 +86,13 @@ class AzureAiSearchRetriever:
             docs.append({"id": str(doc.get(self.id_field) or f"azure-search-{idx}"),
                          "content": content, "score": float(score), "metadata": metadata})
         return docs[:k]
+
+
+class RetrieverAdapter:
+    def __init__(self):
+        self._retriever: AzureAiSearchRetriever | None = None
+
+    async def retrieve(self, text: str) -> list[dict]:
+        if self._retriever is None:
+            self._retriever = AzureAiSearchRetriever()
+        return await asyncio.to_thread(self._retriever.retrieve, text)

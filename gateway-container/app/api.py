@@ -2,7 +2,7 @@
 
 프론트엔드가 호출하는 주소와, 각 주소가 어떤 함수로 연결되는지가 여기 다 있다.
 각 함수는 "요청을 받아서 → 알맞은 담당 모듈에 넘기는" 역할만 한다.
-실제 상담 로직은 orchestrator/, 외부 Azure 호출은 services/ 에 있다.
+실제 상담 로직은 respond_flow.py, 외부 Azure 호출은 services/ 에 있다.
 
 참고 — 함수 앞의 async: "비동기 함수"라는 뜻. 한 요청이 Azure 응답을 기다리는
 동안에도 서버가 다른 요청을 처리할 수 있게 해 준다. await 는 "결과가 올 때까지
@@ -11,10 +11,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
+from . import respond_flow
 from .auth import current_user, require_api_key
 from .contracts import BatchClassifyIn, ClassifyIn, RespondIn, SessionCreateIn
-from .orchestrator import respond_flow
-from .orchestrator.request_context import RespondRequestContext
+from .respond_flow import RespondRequestContext
 from .services import services
 from .session import session_repository
 

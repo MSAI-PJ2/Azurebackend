@@ -5,7 +5,7 @@ services:
   api-gateway:
     build:
       context: .
-      dockerfile: services/api-gateway/Dockerfile
+      dockerfile: Dockerfile
     container_name: mlnode-api-gateway
     environment:
       KLUE_API_URL: ${KLUE_API_URL:-http://host.docker.internal:8000}

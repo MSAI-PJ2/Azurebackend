@@ -1,7 +1,7 @@
 """이미지(채팅 캡쳐) 입력 → OCR → 상담 흐름의 SSE 계약 테스트.
 
 외부 서비스(Document Intelligence 포함)는 전부 가짜 어댑터로 대체 — 키 없이 실행.
-OCR 파이프라인 원본: di/kakao_ocr_pipeline.py (팀원 작업물), 복제본: services/document/.
+OCR 파이프라인 원본: di/kakao_ocr_pipeline.py (팀원 작업물), 복제본: app/services/document_ocr.py.
 """
 import pytest
 from fastapi.testclient import TestClient
@@ -105,7 +105,7 @@ def test_text_still_wins_over_image(gateway):
 
 def test_parsing_logic_matches_original():
     """복제한 순수 파싱 함수 검증 — 좌우 화자·이름 매칭·y좌표 타임스탬프 (원본 di/ 알고리즘)."""
-    from document.kakao_ocr import build_conversation, parse_lines
+    from app.services.document_ocr import build_conversation, parse_lines
 
     page = {"width": 1000, "height": 2000, "lines": [
         {"content": "감동받은 어피치", "polygon": [100, 100, 300, 100, 300, 140, 100, 140]},

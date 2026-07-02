@@ -4,7 +4,7 @@ Dockerfile 의 `uvicorn app.main:app` 이 이 파일의 `app` 객체(FastAPI 서
 여기서는 서버를 만들고 공통 설정(CORS, 요청ID)과 URL 목록(api.py)을 연결만 한다.
 "무엇을 응답할지"의 실제 내용은 전부 다른 파일에 있다:
     URL 목록          → api.py
-    상담 응답 흐름    → orchestrator/respond_flow.py
+    상담 응답 흐름    → respond_flow.py
 """
 import logging
 import os
