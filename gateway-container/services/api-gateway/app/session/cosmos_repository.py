@@ -8,6 +8,10 @@
 
 Cosmos Python SDK 는 동기(블로킹)라서, 모든 public 메서드는 asyncio.to_thread 로
 오프로딩한다. SSE 스트리밍 중 세션 쓰기가 이벤트루프를 막지 않게 하기 위함이다.
+
+동시성: 턴 추가는 read → append → replace 인데, 같은 session_id 로 요청이 겹치면
+마지막 쓰기가 앞의 턴을 덮어쓸 수 있다. 그래서 replace 는 etag 조건부
+(IfNotModified)로 수행하고, 충돌(412) 시 다시 읽어 재시도한다 — 턴 유실 방지.
 """
 from __future__ import annotations
 
@@ -30,12 +34,20 @@ def _env_first(*names: str) -> str:
 class CosmosSessionRepository:
     def __init__(self) -> None:
         try:
+            from azure.core import MatchConditions
             from azure.cosmos import CosmosClient
-            from azure.cosmos.exceptions import CosmosResourceNotFoundError
+            from azure.cosmos.exceptions import (
+                CosmosAccessConditionFailedError,
+                CosmosResourceExistsError,
+                CosmosResourceNotFoundError,
+            )
         except ImportError as exc:  # pragma: no cover - 의존성 누락 시에만
             raise RuntimeError("SESSION_REPOSITORY=cosmos requires azure-cosmos package") from exc
 
         self._not_found_error = CosmosResourceNotFoundError
+        self._conflict_error = CosmosResourceExistsError
+        self._precondition_error = CosmosAccessConditionFailedError
+        self._if_not_modified = MatchConditions.IfNotModified
         connection_string = _env_first("COSMOS_CONNECTION_STRING", "AZURE_COSMOS_CONNECTION_STRING")
         endpoint = _env_first("COSMOS_ENDPOINT", "COSMOS_SESSION_ENDPOINT", "AZURE_COSMOS_ENDPOINT")
         key = _env_first("COSMOS_KEY", "COSMOS_SESSION_KEY", "AZURE_COSMOS_KEY")
@@ -128,22 +140,51 @@ class CosmosSessionRepository:
         if item is None:
             return self._create_sync(sid)
         self._touch(item)
-        self._container.upsert_item(body=item)
+        try:
+            self._container.replace_item(
+                item=sid, body=item,
+                etag=item.get("_etag"), match_condition=self._if_not_modified,
+            )
+        except self._precondition_error:
+            # 동시 쓰기가 이미 문서를 갱신함(touch 목적 달성) — 최신본을 반환만 한다
+            item = self._read(sid) or item
         return self._to_snapshot(item)
 
     def _append_turn_sync(self, session_id: str, turn: dict[str, Any]) -> dict[str, Any]:
         sid = valid_session_id(session_id) or new_session_id()
-        item = self._read(sid) or self._new_item(sid)
         clean_turn = dict(turn)
         clean_turn.setdefault("ts", iso())
-        turns = list(item.get("turns") or [])
-        turns.append(clean_turn)
-        if len(turns) > settings.SESSION_MAX_TURNS:
-            turns = turns[-settings.SESSION_MAX_TURNS:]
-        item["turns"] = turns
-        self._touch(item)
-        self._container.upsert_item(body=item)
-        return self._to_snapshot(item)
+
+        # etag 조건부 쓰기 + 재시도: 같은 세션에 동시 요청이 겹쳐도 턴이 유실되지 않는다
+        for _ in range(4):
+            item = self._read(sid)
+
+            if item is None:
+                item = self._new_item(sid)
+                item["turns"] = [clean_turn]
+                self._touch(item)
+                try:
+                    self._container.create_item(body=item)
+                    return self._to_snapshot(item)
+                except self._conflict_error:
+                    continue  # 다른 요청이 먼저 생성함 — 다시 읽어 append 경로로
+
+            turns = list(item.get("turns") or [])
+            turns.append(clean_turn)
+            if len(turns) > settings.SESSION_MAX_TURNS:
+                turns = turns[-settings.SESSION_MAX_TURNS:]
+            item["turns"] = turns
+            self._touch(item)
+            try:
+                self._container.replace_item(
+                    item=sid, body=item,
+                    etag=item.get("_etag"), match_condition=self._if_not_modified,
+                )
+                return self._to_snapshot(item)
+            except self._precondition_error:
+                continue  # 다른 요청이 먼저 썼음 — 최신본 기준으로 재시도
+
+        raise RuntimeError(f"cosmos session write contention: {sid}")
 
     def _snapshot_sync(self, session_id: str) -> dict[str, Any] | None:
         sid = valid_session_id(session_id)

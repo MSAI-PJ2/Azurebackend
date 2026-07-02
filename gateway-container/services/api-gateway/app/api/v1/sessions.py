@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from ...contracts.requests import SessionCreateIn
-from ...core.auth import require_api_key
+from ...core.auth import current_user, require_api_key
 from ...session import session_repository
 
-router = APIRouter(dependencies=[Depends(require_api_key)])
+router = APIRouter(dependencies=[Depends(require_api_key), Depends(current_user)])
 
 
 @router.post("/sessions")

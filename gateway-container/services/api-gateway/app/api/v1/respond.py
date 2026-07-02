@@ -2,11 +2,11 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
 from ...contracts.requests import RespondIn
-from ...core.auth import require_api_key
+from ...core.auth import current_user, require_api_key
 from ...orchestrator import respond_flow
 from ...orchestrator.request_context import RespondRequestContext
 
-router = APIRouter(dependencies=[Depends(require_api_key)])
+router = APIRouter(dependencies=[Depends(require_api_key), Depends(current_user)])
 
 
 @router.post("/respond")

@@ -42,7 +42,7 @@ POLICIES: dict[str, ContextPolicy] = {
     # 정보 부족: 명확화 질문 중심. RAG 생략.
     "불충분": ContextPolicy(name="insufficient_clarify", prompt_strategy="clarify", use_rag=False),
     # 예) 특정 왜곡 라벨만 RAG 를 늘리고 싶다면:
-    # "파국화": ContextPolicy(name="catastrophizing_deep", prompt_strategy="cbt_label_guided", rag_top_n=6),
+    # "흑백 사고": ContextPolicy(name="dichotomous_deep", prompt_strategy="cbt_label_guided", rag_top_n=6),
 }
 
 # [사람 작업 가이드] '불충분' 최근 N턴 재분류 (아키텍처 문서의 도입 예정 기능)

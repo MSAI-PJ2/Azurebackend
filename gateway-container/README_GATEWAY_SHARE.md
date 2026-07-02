@@ -7,8 +7,8 @@
 
 ```text
 services/api-gateway/  FastAPI 게이트웨이 애플리케이션
-services/common/       LLM, Azure Search, Speech 공통 클라이언트
-services/retrieve/     Retriever provider 래퍼
+services/common/       LLM, Speech 공통 클라이언트 (+ *_legacy 프로토타입 보관)
+services/retrieve/     Retriever provider 래퍼 (local stub / Azure AI Search)
 scripts/               게이트웨이 회귀 테스트 스크립트
 API_CONTRACT.md        프론트엔드와 테스트용 API/SSE 계약서
 .env.example           안전한 환경변수 템플릿

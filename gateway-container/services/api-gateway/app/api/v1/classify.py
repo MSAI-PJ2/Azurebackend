@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends
 
 from ...contracts.requests import BatchClassifyIn, ClassifyIn
-from ...core.auth import require_api_key
+from ...core.auth import current_user, require_api_key
 from ...services import services
 
-router = APIRouter(dependencies=[Depends(require_api_key)])
+router = APIRouter(dependencies=[Depends(require_api_key), Depends(current_user)])
 
 
 @router.post("/classify")

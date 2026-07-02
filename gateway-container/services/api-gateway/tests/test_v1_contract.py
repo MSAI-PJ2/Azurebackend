@@ -264,6 +264,16 @@ def test_api_key_required(gateway, monkeypatch):
     assert ok.json()["primary"] == CLS_RESULT["primary"]
 
 
+def test_auth_mode_entra_fails_fast(gateway, monkeypatch):
+    """AUTH_MODE=entra 는 구현 전까지 501 로 명시적으로 실패해야 한다 (core/auth.py)."""
+    client, _ = gateway
+    settings = _import_settings()
+    if not hasattr(settings, "AUTH_MODE"):
+        pytest.skip("pre-refactor layout has no AUTH_MODE")
+    monkeypatch.setattr(settings, "AUTH_MODE", "entra")
+    assert client.post("/v1/classify", json={"text": "x"}).status_code == 501
+
+
 def test_batch_classify(gateway):
     client, _ = gateway
     r = client.post("/v1/batch-classify", json={"texts": ["a", "b"]})
