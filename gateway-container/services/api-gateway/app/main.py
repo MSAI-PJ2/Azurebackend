@@ -1,5 +1,9 @@
 import uuid
 
+import fastapi
+from azure.monitor.opentelemetry import configure_azure_monitor
+configure_azure_monitor()
+
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
