@@ -7,7 +7,7 @@
 ```text
 Repository: https://github.com/MSAI-PJ2/src.git
 Gateway folder: gateway-container/
-Gateway source layout: gateway-container/app/{api,counsel,services} + tests + scripts (평탄화 구조)
+Gateway source layout: gateway-container/app/{api,respond,services} + tests + scripts (평탄화 구조)
 Gateway base URL: https://api-gateway.icybush-95bf9b25.koreacentral.azurecontainerapps.io
 Auth: x-api-key 임시 필수
 Runtime: FastAPI + Uvicorn

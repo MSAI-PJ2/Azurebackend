@@ -3,7 +3,7 @@
 구획 목차 (Ctrl+F 로 "[구획" 검색):
     [구획 1] 요청 모델   프론트가 보내는 JSON 의 모양 (Pydantic — 형식이 틀리면 자동 422)
     [구획 2] 인증        x-api-key 검사 + Entra External ID 도입 가이드
-    [구획 3] 라우트      URL 목록. HTTP 만 담당 — 상담 로직은 counsel/flow.py 에 위임
+    [구획 3] 라우트      URL 목록. HTTP 만 담당 — 상담 로직은 respond/flow.py 에 위임
 
 참고 — 함수 앞의 async: "비동기 함수". 한 요청이 Azure 응답을 기다리는 동안에도
 서버가 다른 요청을 처리할 수 있게 해 준다. await = "결과가 올 때까지 이 요청만 대기".
@@ -15,8 +15,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from .. import settings
-from ..counsel import flow
-from ..counsel.flow import RespondRequestContext
+from ..respond import flow
+from ..respond.flow import RespondRequestContext
 from ..services import services
 from ..session import session_repository
 
@@ -185,7 +185,7 @@ async def current_user(authorization: str | None = Header(default=None)) -> str:
 # [구획 3] 라우트 — 이 서버가 받는 모든 요청 주소(엔드포인트)
 #
 # 각 함수는 "요청을 받아서 → 알맞은 담당 모듈에 넘기는" 역할만 한다.
-# 상담 로직은 counsel/flow.py, 외부 Azure 호출은 services/ 에 있다.
+# 상담 로직은 respond/flow.py, 외부 Azure 호출은 services/ 에 있다.
 # ══════════════════════════════════════════════════════════════════════════
 
 router = APIRouter()

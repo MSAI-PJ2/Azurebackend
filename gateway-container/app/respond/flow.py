@@ -1,6 +1,6 @@
 """[상담 흐름 — 기계장치] 상담 한 턴이 "어떻게" 흘러가는지가 전부 이 파일에 있다.
 
-"무엇을 답할지"(정책·프롬프트·위기 문구)는 counsel/policy.py — 이 파일은 순서와 배관만.
+"무엇을 답할지"(정책·프롬프트·위기 문구)는 respond/policy.py — 이 파일은 순서와 배관만.
 
 구획 목차 (Ctrl+F 로 "[구획" 검색):
     [구획 1] SSE 이벤트     프론트로 내보내는 메시지 조각들의 형식 (API_CONTRACT 와 1:1)
@@ -27,7 +27,7 @@ from ..session import (
     assistant_turn, crisis_turn, input_pending_turn, ocr_failed_turn,
     session_repository, stt_failed_turn, user_turn,
 )
-from . import policy as counsel_policy
+from . import policy as respond_policy
 
 DEFAULT_LANGUAGE = "ko-KR"
 
@@ -378,8 +378,8 @@ async def respond_stream(text: str, session_id=None, input_meta=None, tts=None, 
     # 대표 라벨의 확신 점수를 찾는다 (라벨 목록에서 primary 와 같은 항목의 score)
     confidence = max((l["score"] for l in cls["labels"] if l["label"] == primary), default=0.0)
 
-    # 3) 이번 턴을 어떻게 응답할지 정책 결정 — 규칙은 counsel/policy.py [구획 1]에서 편집
-    policy = counsel_policy.resolve(safety, cls)
+    # 3) 이번 턴을 어떻게 응답할지 정책 결정 — 규칙은 respond/policy.py [구획 1]에서 편집
+    policy = respond_policy.resolve(safety, cls)
 
     # 사용자 발화를 대화 기록에 저장하고, 분류 결과를 meta 이벤트로 프론트에 먼저 알린다
     await session_repository.append_turn(session_id, user_turn(text, primary, safety, input_meta, tts))
@@ -388,7 +388,7 @@ async def respond_stream(text: str, session_id=None, input_meta=None, tts=None, 
 
     # 4) 위기 분기: LLM 답변 생성 없이 고정 메시지 + 상담 핫라인을 즉시 출력하고 종료
     if policy.is_crisis:
-        payload = counsel_policy.crisis_payload(reason=safety.get("reason"))
+        payload = respond_policy.crisis_payload(reason=safety.get("reason"))
         yield sse(payload)
         await session_repository.append_turn(session_id, crisis_turn(payload))
         if tts and tts.get("enabled"):
@@ -404,7 +404,7 @@ async def respond_stream(text: str, session_id=None, input_meta=None, tts=None, 
     yield sse(chunks_event(session_id, chunks))
 
     # 시스템 프롬프트(상담 스타일·라벨 지침) + 이전 대화 + 이번 발화 → LLM 입력 메시지
-    messages = counsel_policy.build_llm_messages(policy.prompt_strategy, primary, chunks,
+    messages = respond_policy.build_llm_messages(policy.prompt_strategy, primary, chunks,
                                                  prior_messages, text)
     assistant_parts: list[str] = []
     # LLM 이 글자를 생성하는 대로 token 이벤트로 즉시 내보낸다 (타자 치듯 보이는 효과)

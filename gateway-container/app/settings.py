@@ -41,7 +41,7 @@ CONTENT_SAFETY_TIMEOUT = float(os.getenv("CONTENT_SAFETY_TIMEOUT", "5"))
 
 # --- RAG: 검색된 참고자료 중 프롬프트에 넣을 문서 개수 ---
 RERANK_TOP_N = int(os.getenv("RERANK_TOP_N", "4"))
-# 라벨 일치 문서 가산점의 크기와 발동 조건 (기본값 = 현행 동작, counsel/flow.py 구획 3 참고)
+# 라벨 일치 문서 가산점의 크기와 발동 조건 (기본값 = 현행 동작, respond/flow.py 구획 3 참고)
 RERANK_BIAS_WEIGHT = float(os.getenv("RERANK_BIAS_WEIGHT", "0.3"))
 RERANK_BIAS_MIN_CONFIDENCE = float(os.getenv("RERANK_BIAS_MIN_CONFIDENCE", "0.5"))
 # 발동 판정 기준: score(확신 점수 — 단일라벨 softmax 기준, 현행)

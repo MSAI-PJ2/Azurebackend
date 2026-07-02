@@ -7,7 +7,7 @@
     [구획 2] 시스템 프롬프트   페르소나·말투·라벨별 접근법 (PERSONA/STYLE_RULES/LABEL_GUIDANCE)
     [구획 3] 위기 대응         고정 위기 메시지 + 핫라인 (+ 위치기반 DB 작업 가이드)
 
-흐름과의 연결: counsel/flow.py 의 respond_stream 이
+흐름과의 연결: respond/flow.py 의 respond_stream 이
     resolve()(구획 1) → build_llm_messages()(구획 2) / crisis_payload()(구획 3) 순으로 쓴다.
 """
 from dataclasses import dataclass

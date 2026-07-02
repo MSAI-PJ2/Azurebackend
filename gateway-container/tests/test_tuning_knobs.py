@@ -6,8 +6,8 @@
 import pytest
 
 from app import settings
-from app.counsel import policy as context_policy
-from app.counsel.flow import rerank
+from app.respond import policy as context_policy
+from app.respond.flow import rerank
 
 CANDS = [
     {"id": "d1", "content": "라벨 일치 문서", "score": 0.8, "metadata": {"distortions": ["흑백 사고"]}},
