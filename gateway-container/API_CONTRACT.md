@@ -642,11 +642,15 @@ tts.voice=ko-KR-SunHiNeural
 tts.format=wav 또는 mp3
 ```
 
-## 19. Respond - image 입력 (채팅 캡쳐 OCR)
+## 19. Respond - image 입력 (OCR)
 
-카카오톡 등 채팅 캡쳐 이미지를 보내면 Azure Document Intelligence 로 대화를 복원해
-"나"(내담자 본인)의 발화를 상담 입력으로 사용한다.
-(과거 초안의 `input_type=document` 명칭은 `image` 로 확정됨.)
+이미지를 보내면 Azure Document Intelligence 로 텍스트를 추출해 상담 입력으로 사용한다.
+해석 방법은 `ocr.profile` 로 갈린다 (과거 초안의 `input_type=document` 명칭은 `image` 로 확정됨):
+
+```text
+generic (기본)  일반 이미지(일기·메모 등) — 추출 텍스트 전체를 사용자 발화로
+kakao           카카오톡 캡쳐 — 화자 분리 후 "나"(내담자) 발화만 상담 입력으로
+```
 
 OCR 파이프라인 원본은 리포 루트 `di/kakao_ocr_pipeline.py`(DI 담당 팀원 작업물,
 설명은 `di/README.md`)이며, Gateway 는 그 복제본 `app/services/document_ocr.py` 를 사용한다.
@@ -656,7 +660,7 @@ DOCINTEL_ENDPOINT=https://<your-doc-intel-resource>.cognitiveservices.azure.com/
 DOCINTEL_KEY=<set-in-azure-secret-or-local-env>
 ```
 
-요청:
+요청 (카톡 캡쳐):
 
 ```json
 {
@@ -667,23 +671,29 @@ DOCINTEL_KEY=<set-in-azure-secret-or-local-env>
     "mime_type": "image/png"
   },
   "ocr": {
+    "profile": "kakao",
     "sender_names": ["감동받은 어피치"]
   }
 }
 ```
 
+요청 (일반 이미지): `ocr` 를 생략하거나 `{"profile": "generic"}` — sender_names 불필요.
+
 - `image.kind`: `base64` | `url`
-- `ocr.sender_names`(선택): 채팅방 상단에 뜨는 상대 이름 목록. 지정하면 화자 판별 정확도가 올라간다.
+- `ocr.profile`: `generic`(기본) | `kakao`
+- `ocr.sender_names`(kakao 전용, 선택): 채팅방 상단에 뜨는 상대 이름 목록. 지정하면 화자 판별 정확도가 올라간다.
 - `text` 가 함께 오면 OCR 을 건너뛰고 text 를 사용한다 (text > image 우선순위).
 
 이벤트 순서:
 
 ```text
-성공:  ocr(processing) -> ocr(completed, conversation 포함) -> meta -> chunks -> token... -> done
-실패:  ocr(processing) -> ocr(error|no_user_messages) -> input_required -> done
+성공:  ocr(processing) -> ocr(completed, profile·user_text[·conversation] 포함) -> meta -> chunks -> token... -> done
+실패:  ocr(processing) -> ocr(error | no_user_messages(kakao) | no_text_found(generic)) -> input_required -> done
 ```
 
-`ocr(completed)` 이벤트의 `conversation` 형식 (di 파이프라인 출력과 동일):
+`ocr(completed)` 이벤트의 `user_text` = 상담 입력으로 쓸 텍스트
+(generic: 추출 전체 / kakao: `speaker == "나"` 발화를 개행으로 연결).
+kakao 프로파일의 `conversation` 형식 (di 파이프라인 출력과 동일):
 
 ```json
 [
@@ -692,10 +702,10 @@ DOCINTEL_KEY=<set-in-azure-secret-or-local-env>
 ]
 ```
 
-- 상담 입력 텍스트 = `speaker == "나"` 인 발화들을 개행으로 연결한 것.
-- OCR 성공 후에도 `meta` 이벤트·세션 턴의 `input.input_type` 은 `"image"` 로 유지된다
-  (STT 가 `transcript` 로 바꾸는 것과 다름 — 입력 원천을 그대로 기록).
-- "나" 발화가 없으면 `no_user_messages` 로 input_required 처리.
+- OCR 성공 후에도 `meta` 이벤트·세션 턴의 `input.input_type` 은 `"image"` 로 유지되고,
+  `input.ocr.profile` 에 해석 방법이 기록된다 (kakao 는 `input.ocr.conversation` 도 보존).
+- kakao 에서 "나" 발화가 없으면 `no_user_messages`, generic 에서 텍스트가 없으면
+  `no_text_found` 로 input_required 처리.
 - 세션 턴에는 `input.image` 에서 원본 base64(`data`)를 제거하고 저장한다
   (Cosmos 문서 크기 한도 보호). `input.ocr.conversation` 은 보존된다.
 

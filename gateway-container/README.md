@@ -10,7 +10,7 @@ FastAPI + Uvicorn / Azure Container Apps + ACR
 Auth: x-api-key (Entra External ID 도입 예정 — app/api/v1.py 구획 2 가이드)
 Classifier: internal cogdist Container App | Safety: Azure Content Safety + keyword fallback
 RAG: Azure AI Search | LLM: Azure OpenAI gpt-4.1-mini | Speech: Azure Speech STT/TTS
-OCR: Azure Document Intelligence (채팅 캡쳐 이미지 → 대화 로그)
+OCR: Azure Document Intelligence — ocr.profile 로 분기: generic(일반 이미지, 기본) | kakao(카톡 캡쳐 화자분리)
 Session: memory(개발) 또는 Azure Cosmos DB
 ```
 
@@ -116,7 +116,8 @@ docker compose -f gateway-container/docker-compose.yml up --build api-gateway
 ## 상태
 
 - `/healthz`·`/v1/classify`·`/v1/respond`(text/transcript/audio/TTS)·crisis·Cosmos 세션 검증 PASS
-- 채팅 캡쳐 이미지 입력(`input_type=image`) 통합됨 — 실이미지 배포 검증 대기
+- 이미지 입력(`input_type=image`) 통합됨 — `ocr.profile`: generic(일반)/kakao(카톡 캡쳐).
+  실이미지 배포 검증 대기
 - 프로토타입 경로(로컬 LLM, GPT-5 responses, 로컬 retriever stub 등)는 삭제됨
   — 필요하면 git 히스토리(070c799 이전)에서 복원
 - 계약 테스트 32건 통과 — 구조 평탄화(A+B+C) 전후 동일

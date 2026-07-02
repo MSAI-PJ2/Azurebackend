@@ -60,7 +60,13 @@ class ImageIn(BaseModel):
 
 
 class OcrIn(BaseModel):
-    """OCR 옵션. sender_names: 채팅방 상단에 뜨는 상대 이름 — 화자 판별 정확도를 높인다."""
+    """OCR 옵션 — 이미지를 어떻게 해석할지.
+
+    profile: generic(일반 이미지 — 텍스트 전체 추출, 기본)
+           | kakao(카톡 캡쳐 — 화자 분리 후 "나" 발화만 상담 입력으로)
+    sender_names: kakao 프로파일에서 채팅방 상단 상대 이름 — 화자 판별 정확도를 높인다.
+    """
+    profile: Literal["generic", "kakao"] = "generic"
     sender_names: list[str] | None = None
 
 
