@@ -13,6 +13,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY services/common /app/common
 COPY services/retrieve /app/retrieve
+COPY services/document /app/document
 COPY services/api-gateway/app /app/app
 
 EXPOSE 8080

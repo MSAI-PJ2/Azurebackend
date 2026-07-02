@@ -627,52 +627,67 @@ tts.voice=ko-KR-SunHiNeural
 tts.format=wav 또는 mp3
 ```
 
-## 19. Document Intelligence - 다음 작업 예정 계약
+## 19. Respond - image 입력 (채팅 캡쳐 OCR)
 
-현재 `.env.example`에는 Document Intelligence OCR 설정 예시만 반영되어 있다. Gateway API 연결은 다음 구현 단계다.
+카카오톡 등 채팅 캡쳐 이미지를 보내면 Azure Document Intelligence 로 대화를 복원해
+"나"(내담자 본인)의 발화를 상담 입력으로 사용한다.
+(과거 초안의 `input_type=document` 명칭은 `image` 로 확정됨.)
+
+OCR 파이프라인 원본은 리포 루트 `di/kakao_ocr_pipeline.py`(DI 담당 팀원 작업물,
+설명은 `di/README.md`)이며, Gateway 는 그 복제본 `services/document/` 를 사용한다.
 
 ```env
 DOCINTEL_ENDPOINT=https://<your-doc-intel-resource>.cognitiveservices.azure.com/
 DOCINTEL_KEY=<set-in-azure-secret-or-local-env>
-DOCINTEL_API_VERSION=2024-11-30
-DOCINTEL_MODEL_ID=prebuilt-read
 ```
 
-예상 입력 계약 초안:\n\n프론트엔드/클라이언트는 문서 OCR 요청 시 input_type=document를 사용한다.\n\n
+요청:
+
 ```json
 {
-  "session_id": "doc-test-1",
-  "input_type": "document",
-  "document": {
+  "session_id": "image-test-1",
+  "image": {
     "kind": "base64",
-    "data": "<IMAGE_OR_PDF_BASE64>",
-    "mime_type": "image/png",
-    "language": "ko-KR"
+    "data": "<JPEG_OR_PNG_BASE64>",
+    "mime_type": "image/png"
+  },
+  "ocr": {
+    "sender_names": ["감동받은 어피치"]
   }
 }
 ```
 
-예상 이벤트 순서 초안:
+- `image.kind`: `base64` | `url`
+- `ocr.sender_names`(선택): 채팅방 상단에 뜨는 상대 이름 목록. 지정하면 화자 판별 정확도가 올라간다.
+- `text` 가 함께 오면 OCR 을 건너뛰고 text 를 사용한다 (text > image 우선순위).
+
+이벤트 순서:
 
 ```text
-document(processing) -> document(completed|error) -> meta -> chunks -> token... -> done
+성공:  ocr(processing) -> ocr(completed, conversation 포함) -> meta -> chunks -> token... -> done
+실패:  ocr(processing) -> ocr(error|no_user_messages) -> input_required -> done
 ```
 
-초기 구현 범위:
+`ocr(completed)` 이벤트의 `conversation` 형식 (di 파이프라인 출력과 동일):
 
-```text
-- prebuilt-read 기반 OCR
-- 이미지/문서에서 텍스트 추출
-- OCR 결과를 transcript/text처럼 Gateway DAG에 연결
-- bounding box는 프론트 디버그/하이라이트용으로 선택 보존
+```json
+[
+  {"speaker": "감동받은 어피치", "content": "야 오늘 과제 제출했어?", "time": "오전 11:15"},
+  {"speaker": "나", "content": "응 아까 냈어.", "time": "오전 11:15"}
+]
 ```
+
+- 상담 입력 텍스트 = `speaker == "나"` 인 발화들을 개행으로 연결한 것.
+- "나" 발화가 없으면 `no_user_messages` 로 input_required 처리.
+- 세션 턴에는 `input.image` 에서 원본 base64(`data`)를 제거하고 저장한다
+  (Cosmos 문서 크기 한도 보호). `input.ocr.conversation` 은 보존된다.
 
 보안 주의:
 
 ```text
-- document.url을 받을 경우 SSRF 방어가 필요하다.
-- base64 업로드는 크기 제한이 필요하다.
-- OCR 원문은 개인정보 가능성이 높으므로 로그에 원문을 그대로 남기지 않는다.
+- image.url 수신 시 SSRF 방어가 필요하다 (현재 미구현 — 프론트는 base64 사용 권장).
+- base64 업로드는 크기 제한이 필요하다 (DI 한도 4MB).
+- OCR 대화 원문은 개인정보 가능성이 높으므로 로그에 그대로 남기지 않는다.
 - DOCINTEL_KEY는 Azure Container Apps secretref로만 주입한다.
 ```
 

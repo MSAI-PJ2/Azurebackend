@@ -12,6 +12,12 @@ def stt_failed_turn(input_meta: dict, result: dict, tts: dict | None) -> dict:
             "input": input_meta, "stt_result": result, "tts": tts}
 
 
+def ocr_failed_turn(input_meta: dict, result: dict, tts: dict | None) -> dict:
+    """이미지 OCR 실패 기록 — 어떤 이미지가 왜 실패했는지 남긴다."""
+    return {"role": "user", "text": "", "event": "ocr_failed",
+            "input": input_meta, "ocr_result": result, "tts": tts}
+
+
 def input_pending_turn(input_meta: dict, tts: dict | None) -> dict:
     """빈 입력 요청 기록."""
     return {"role": "user", "text": "", "event": "input_pending", "input": input_meta, "tts": tts}

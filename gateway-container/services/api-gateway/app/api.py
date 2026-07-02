@@ -46,13 +46,17 @@ async def batch_classify(body: BatchClassifyIn):
 async def respond(body: RespondIn):
     """상담 응답 생성 — 이 서비스의 핵심 주소.
 
-    입력 형태(음성/텍스트/빈 입력)에 따라 세 가지 흐름 중 하나로 보낸다.
+    입력 형태(이미지/음성/텍스트/빈 입력)에 따라 네 가지 흐름 중 하나로 보낸다.
     응답은 한 번에 주지 않고 SSE 스트리밍(생성되는 대로 조각조각 전송)으로 보낸다
     — 그래서 반환값이 일반 JSON 이 아니라 StreamingResponse 다.
     """
     context = RespondRequestContext.from_body(body)  # 요청을 내부 형태로 정리
 
-    if context.requires_stt:
+    if context.requires_ocr:
+        # 채팅 캡쳐 이미지만 왔음 → OCR(Document Intelligence) 후 상담 흐름으로
+        stream = respond_flow.ocr_then_respond_stream(
+            context.session_id, context.input_meta, context.tts, context.llm)
+    elif context.requires_stt:
         # 오디오만 왔음 → 먼저 음성→텍스트(STT) 변환 후 상담 흐름으로
         stream = respond_flow.stt_then_respond_stream(
             context.session_id, context.input_meta, context.tts, context.llm)

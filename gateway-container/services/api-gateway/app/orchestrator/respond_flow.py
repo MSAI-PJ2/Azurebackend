@@ -16,15 +16,18 @@ respond_stream 한 턴의 순서:
 import asyncio
 
 from ..events import (
-    INPUT_REQUIRED_STT_MESSAGE, INPUT_REQUIRED_TEXT_MESSAGE,
-    chunks_event, done_event, input_required_event, meta_event, sse,
+    INPUT_REQUIRED_OCR_MESSAGE, INPUT_REQUIRED_STT_MESSAGE, INPUT_REQUIRED_TEXT_MESSAGE,
+    chunks_event, done_event, input_required_event, meta_event,
+    ocr_processing_event, ocr_result_event, sse,
     stt_processing_event, stt_result_event, token_event, tts_event,
 )
 from ..prompts import build_llm_messages
 from ..ranking import rerank
 from ..services import services
 from ..session import session_repository
-from ..session.turns import assistant_turn, crisis_turn, input_pending_turn, stt_failed_turn, user_turn
+from ..session.turns import (
+    assistant_turn, crisis_turn, input_pending_turn, ocr_failed_turn, stt_failed_turn, user_turn,
+)
 from . import context_policy, crisis
 from .request_context import RespondRequestContext, default_text_input_meta
 
@@ -54,6 +57,47 @@ async def stt_then_respond_stream(session_id=None, input_meta=None, tts=None, ll
     yield sse(stt_result_event(session_id, result))
     async for event in respond_stream(context.text or "", session_id, context.input_meta, tts, llm):
         yield event  # respond_stream 이 내보내는 이벤트를 그대로 통과시킨다
+
+
+async def ocr_then_respond_stream(session_id=None, input_meta=None, tts=None, llm=None):
+    """채팅 캡쳐 이미지 입력: OCR → ocr 이벤트 → '나' 발화를 모아 일반 상담 흐름으로.
+
+    STT 흐름(stt_then_respond_stream)과 대칭 구조. OCR 파이프라인 원본은
+    리포 루트 di/kakao_ocr_pipeline.py (팀원 작업물) — 게이트웨이는 그 복제본
+    services/document/kakao_ocr.py 를 사용한다.
+    """
+    context = RespondRequestContext(session_id, None, input_meta or {}, tts, llm)
+    session = await session_repository.ensure(context.session_id)
+    session_id = session["session_id"]
+
+    # "인식 시작" 알림을 먼저 보내고, Document Intelligence 로 대화 로그를 추출
+    yield sse(ocr_processing_event(session_id))
+    result = await services.document.extract_conversation(context.image, context.sender_names)
+    conversation = result.get("conversation") or []
+    # 상담 대상은 캡쳐 속 "나"(내담자 본인)의 발화 — 팀원의 분류 설계와 동일 기준
+    user_text = "\n".join(m.get("content", "") for m in conversation
+                          if m.get("speaker") == "나").strip()
+
+    # 세션에는 원본 base64 를 빼고 저장한다 (Cosmos 문서 크기 한도·비용 보호)
+    slim_image = {k: v for k, v in context.image.items() if k != "data"}
+    stored_meta = {**context.input_meta, "image": slim_image}
+
+    if result.get("status") != "completed" or not user_text:
+        # OCR 실패 또는 "나" 발화 없음: 실패 이벤트 + 재입력 요청을 명시적으로 보낸다
+        if result.get("status") == "completed":
+            result = {**result, "status": "no_user_messages"}
+        await session_repository.append_turn(session_id, ocr_failed_turn(stored_meta, result, tts))
+        yield sse(ocr_result_event(session_id, result))
+        yield sse(input_required_event(session_id, result.get("status") or "ocr_failed",
+                                       INPUT_REQUIRED_OCR_MESSAGE))
+        yield sse(done_event(session_id))
+        return
+
+    # OCR 성공: 대화 로그를 입력 기록에 남기고 이벤트로 프론트에 전달
+    stored_meta["ocr"] = {**(stored_meta.get("ocr") or {}), "conversation": conversation}
+    yield sse(ocr_result_event(session_id, result))
+    async for event in respond_stream(user_text, session_id, stored_meta, tts, llm):
+        yield event
 
 
 async def input_pending_stream(session_id=None, input_meta=None, tts=None):

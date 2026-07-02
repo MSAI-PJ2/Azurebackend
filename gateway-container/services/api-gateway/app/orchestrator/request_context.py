@@ -46,8 +46,22 @@ class RespondRequestContext:
         return bool(self.input_meta.get("audio")) and not self.has_text
 
     @property
+    def requires_ocr(self) -> bool:
+        """채팅 캡쳐 이미지만 있고 텍스트가 없어서 OCR 이 먼저 필요한가?"""
+        return bool(self.input_meta.get("image")) and not self.has_text
+
+    @property
     def audio(self) -> dict[str, Any]:
         return dict(self.input_meta.get("audio") or {})
+
+    @property
+    def image(self) -> dict[str, Any]:
+        return dict(self.input_meta.get("image") or {})
+
+    @property
+    def sender_names(self) -> list[str]:
+        """OCR 화자 판별 보정용 상대 이름 목록 (요청의 ocr.sender_names)."""
+        return list((self.input_meta.get("ocr") or {}).get("sender_names") or [])
 
     @property
     def language(self) -> str:

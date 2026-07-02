@@ -10,6 +10,7 @@ FastAPI + Uvicorn / Azure Container Apps + ACR
 Auth: x-api-key (Entra External ID 도입 예정 — app/auth.py 가이드)
 Classifier: internal cogdist Container App | Safety: Azure Content Safety + keyword fallback
 RAG: Azure AI Search | LLM: Azure OpenAI gpt-4.1-mini | Speech: Azure Speech STT/TTS
+OCR: Azure Document Intelligence (채팅 캡쳐 이미지 → 대화 로그)
 Session: memory(개발) 또는 Azure Cosmos DB
 ```
 
@@ -37,8 +38,16 @@ gateway-container/
     |       |-- services/      외부 서비스 어댑터 (컴포넌트당 파일 하나)
     |       `-- session/       세션 저장소 (memory/Cosmos) + 턴 빌더
     |-- common/                Azure OpenAI·Speech 클라이언트
-    `-- retrieve/              Azure AI Search retriever
+    |-- retrieve/              Azure AI Search retriever
+    `-- document/              채팅 캡쳐 OCR (원본: 리포 루트 di/ — 아래 출처 참고)
 ```
+
+### OCR 파이프라인 출처
+
+`services/document/kakao_ocr.py` 는 **DI 담당 팀원이 작업한 리포 루트 `di/kakao_ocr_pipeline.py` 의
+복제·개조본**이다. 원본은 포트폴리오·독립 실행 목적으로 무수정 보존하며, 알고리즘 설명
+(라인 분류 · 좌우 화자 판별 · y좌표 타임스탬프 매칭)은 `di/README.md` 가 기준 문서다.
+게이트웨이 쪽 개조는 입출력 포장뿐이다: bytes 입력, dict 반환, dotenv 제거.
 
 ## 용어 미니 사전 (비전공자용)
 
@@ -110,4 +119,5 @@ docker compose -f gateway-container/docker-compose.yml up --build api-gateway
 - `/healthz`·`/v1/classify`·`/v1/respond`(text/transcript/audio/TTS)·crisis·Cosmos 세션 검증 PASS
 - 프로토타입 경로(로컬 LLM, GPT-5 responses, model router, 로컬 retriever stub, legacy 분류기 정규화)는
   이 브랜치에서 삭제됨 — 필요하면 git 히스토리(070c799 이전)에서 복원
-- Document Intelligence OCR 은 별도 브랜치 (`input_type=document` 예정)
+- 채팅 캡쳐 이미지 입력(`input_type=image`) 통합됨: image → `ocr` 이벤트 → "나" 발화 추출
+  → 기존 텍스트 상담 흐름. 계약 테스트 5건 포함(총 32건). 실이미지 배포 검증은 대기

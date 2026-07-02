@@ -31,6 +31,19 @@ class AudioIn(BaseModel):
     language: str | None = "ko-KR"
 
 
+class ImageIn(BaseModel):
+    """채팅 캡쳐 이미지 입력 (jpeg/png). base64 또는 url 로 전달."""
+    kind: Literal["url", "base64"] = "base64"
+    url: str | None = None
+    data: str | None = None      # base64 로 인코딩된 이미지 바이트
+    mime_type: str | None = None  # 예: image/jpeg, image/png
+
+
+class OcrIn(BaseModel):
+    """OCR 옵션. sender_names: 채팅방 상단에 뜨는 상대 이름 — 화자 판별 정확도를 높인다."""
+    sender_names: list[str] | None = None
+
+
 class SttIn(BaseModel):
     """음성→텍스트 관련 정보. transcript(전사문)가 이미 있으면 STT 를 건너뛴다."""
     provider: str | None = None
@@ -55,11 +68,13 @@ class LlmIn(BaseModel):
 
 
 class RespondIn(BaseModel):
-    """POST /v1/respond 의 입력 — 텍스트/음성/전사문 중 하나로 상담을 요청한다."""
+    """POST /v1/respond 의 입력 — 텍스트/음성/전사문/채팅캡쳐 이미지 중 하나로 상담을 요청한다."""
     text: str | None = None
     session_id: str | None = None   # 대화방 ID. 같은 ID 로 보내면 대화가 이어진다
-    input_type: Literal["text", "audio", "transcript"] | None = None
+    input_type: Literal["text", "audio", "transcript", "image"] | None = None
     audio: AudioIn | None = None
+    image: ImageIn | None = None
+    ocr: OcrIn | None = None
     stt: SttIn | None = None
     tts: TtsIn | None = None
     llm: LlmIn | None = None
@@ -76,9 +91,12 @@ class RespondIn(BaseModel):
 
     def input_meta(self) -> dict[str, Any]:
         """어떤 형태의 입력이었는지 기록용으로 정리 (세션 저장·meta 이벤트에 들어감)."""
+        default_type = "image" if self.image else ("audio" if self.audio else "text")
         return {
-            "input_type": self.input_type or ("audio" if self.audio else "text"),
+            "input_type": self.input_type or default_type,
             "audio": self.audio.model_dump(exclude_none=True) if self.audio else None,
+            "image": self.image.model_dump(exclude_none=True) if self.image else None,
+            "ocr": self.ocr.model_dump(exclude_none=True) if self.ocr else None,
             "stt": self.stt.model_dump(exclude_none=True) if self.stt else None,
             "client": self.client,
             "metadata": self.metadata,

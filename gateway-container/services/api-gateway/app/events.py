@@ -15,6 +15,10 @@ INPUT_REQUIRED_STT_MESSAGE = (
 INPUT_REQUIRED_TEXT_MESSAGE = (
     "No text or transcript was provided. Send text, stt.transcript, or an audio payload."
 )
+INPUT_REQUIRED_OCR_MESSAGE = (
+    "image payload was accepted, but OCR did not produce user messages. "
+    "Check ocr event error/reason, or send text instead."
+)
 
 
 def sse(obj: dict) -> str:
@@ -31,6 +35,17 @@ def stt_processing_event(session_id: str, provider: str, language: str) -> dict:
 def stt_result_event(session_id: str, result: dict) -> dict:
     """음성 인식 결과 (성공: transcript 포함 / 실패: error·reason 포함)."""
     return {"type": "stt", "session_id": session_id, **result}
+
+
+def ocr_processing_event(session_id: str) -> dict:
+    """"이미지 인식을 시작했다"는 알림 — 프론트가 로딩 표시를 띄울 수 있게."""
+    return {"type": "ocr", "session_id": session_id, "status": "processing",
+            "provider": "azure_document_intelligence"}
+
+
+def ocr_result_event(session_id: str, result: dict) -> dict:
+    """OCR 결과 (성공: conversation 포함 / 실패: error 포함)."""
+    return {"type": "ocr", "session_id": session_id, **result}
 
 
 def input_required_event(session_id: str, reason: str, message: str) -> dict:

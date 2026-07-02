@@ -8,13 +8,14 @@ Azure SDK 사용법이 바뀌어도 어댑터 파일 하나만 고치면 된다.
 """
 from .classifier import ClassifierAdapter
 from .content_safety import SafetyAdapter
+from .document_intelligence import DocumentAdapter
 from .llm import LlmAdapter
 from .retriever import RetrieverAdapter
 from .speech import SpeechAdapter
 
 
 class GatewayServiceAdapters:
-    """다섯 개의 외부 서비스 창구를 한 객체에 모은 것."""
+    """여섯 개의 외부 서비스 창구를 한 객체에 모은 것."""
 
     def __init__(self):
         self.classifier = ClassifierAdapter()  # 인지왜곡 분류 (내부 cogdist 컨테이너)
@@ -22,6 +23,7 @@ class GatewayServiceAdapters:
         self.retriever = RetrieverAdapter()    # 참고자료 검색 (Azure AI Search)
         self.llm = LlmAdapter()                # 답변 생성 (Azure OpenAI)
         self.speech = SpeechAdapter()          # 음성 변환 (Azure Speech STT/TTS)
+        self.document = DocumentAdapter()      # 채팅 캡쳐 OCR (Azure Document Intelligence)
 
 
 # 서버 전체가 공유하는 인스턴스 (싱글톤)

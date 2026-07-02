@@ -4,7 +4,7 @@
 사용법:
     export GW_FQDN=$(az containerapp show -g $RG -n api-gateway --query properties.configuration.ingress.fqdn -o tsv)
     read -s -p 'Gateway API key: ' API_KEY_VALUE; echo; export API_KEY_VALUE
-    python gateway_live_test.py text|transcript|tts|audio|session|all
+    python gateway_live_test.py text|transcript|tts|audio|image|session|all
 
 audio 모드는 WAV 파일 경로를 TEST_AUDIO_FILE 로 지정 (기본 없음 → 스킵).
 로컬 계약 테스트(외부 서비스 불필요)는 services/api-gateway/tests/ 를 사용.
@@ -69,16 +69,26 @@ def run(mode: str) -> bool:
         data = base64.b64encode(open(path, "rb").read()).decode()
         return check("audio", post_sse({"session_id": sid, "audio": {
             "kind": "base64", "data": data, "mime_type": "audio/wav"}}), ["stt"])
+    if mode == "image":
+        path = os.environ.get("TEST_IMAGE_FILE")  # 채팅 캡쳐 jpeg/png (예: di/di_test_image.jpeg)
+        if not path:
+            print("[SKIP] image: set TEST_IMAGE_FILE=<jpeg/png path>")
+            return True
+        names = [n for n in os.environ.get("TEST_SENDER_NAMES", "").split(",") if n]
+        data = base64.b64encode(open(path, "rb").read()).decode()
+        return check("image", post_sse({"session_id": sid,
+                                        "image": {"kind": "base64", "data": data, "mime_type": "image/jpeg"},
+                                        "ocr": {"sender_names": names}}), ["ocr"])
     if mode == "session":
         post_sse({"session_id": sid, "text": TEXT})
         snap = get(f"/v1/sessions/{sid}")
         ok = snap.get("turn_count", 0) >= 2
         print(f"[{'PASS' if ok else 'FAIL'}] session: turn_count={snap.get('turn_count')}")
         return ok
-    sys.exit(f"unknown mode: {mode} (text|transcript|tts|audio|session|all)")
+    sys.exit(f"unknown mode: {mode} (text|transcript|tts|audio|image|session|all)")
 
 
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "all"
-    modes = ["text", "transcript", "tts", "audio", "session"] if mode == "all" else [mode]
+    modes = ["text", "transcript", "tts", "audio", "image", "session"] if mode == "all" else [mode]
     sys.exit(0 if all(run(m) for m in modes) else 1)
