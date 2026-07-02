@@ -7,7 +7,7 @@ predict.py  -  학습한 멀티라벨 모델로 새 문장 분류하기 (multi_l
 - 하나도 threshold를 못 넘으면 가장 높은 라벨 1개를 fallback으로 반환 (완전히 빈 결과 방지)
 
 실행 예:
-  python predict.py --model_dir outputs/multi_large/best \
+  python predict.py --model_dir outputs/multi_large_v2/best \
       --text "이번 시험 한 번 망쳤으니 난 완전히 실패자야"
 """
 
@@ -26,9 +26,7 @@ def get_device():
     return torch.device("cpu")
 
 
-EXCLUSIVE_LABELS = {"정상", "불충분"}
-
-def load_threshold(model_dir: str, default: float = 0.55) -> float:
+def load_threshold(model_dir: str, default: float = 0.5) -> float:
     """model_dir 안의 threshold.json에서 threshold 값을 읽어옴. 없으면 default 사용."""
     threshold_path = os.path.join(model_dir, "threshold.json")
     if os.path.exists(threshold_path):
@@ -72,28 +70,21 @@ class CogDistClassifier:
             self.id2label[i]: probs[i].item() for i in range(len(self.id2label))
         }
 
-        primary = max(all_scores, key=all_scores.get)
+        # threshold를 넘는 라벨만 채택
+        passed = [(label, score) for label, score in all_scores.items() if score >= self.threshold]
+        passed.sort(key=lambda x: x[1], reverse=True)
 
-        # 정상/불충분은 라우팅 라벨이므로 인지왜곡 다중 라벨과 배타적으로 처리한다.
-        # primary가 정상/불충분이면 그 라벨 하나만 채택하고,
-        # primary가 인지왜곡이면 정상/불충분은 threshold를 넘더라도 채택하지 않는다.
-        if primary in EXCLUSIVE_LABELS:
-            passed = [(primary, all_scores[primary])]
-        else:
-            passed = [
-                (label, score)
-                for label, score in all_scores.items()
-                if label not in EXCLUSIVE_LABELS and score >= self.threshold
-            ]
-            if primary not in [label for label, _ in passed]:
-                passed.append((primary, all_scores[primary]))
-            passed.sort(key=lambda x: x[1], reverse=True)
+        # 아무것도 threshold를 못 넘으면, 가장 높은 라벨 1개를 fallback으로 반환
+        if not passed:
+            best_label = max(all_scores, key=all_scores.get)
+            passed = [(best_label, all_scores[best_label])]
 
-        return {"primary": primary, "labels": passed, "all_scores": all_scores, "threshold": self.threshold}
+        return {"labels": passed, "all_scores": all_scores}
+
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--model_dir", default="outputs/multi_large/best")
+    p.add_argument("--model_dir", default="outputs/multi_large_v2/best")
     p.add_argument("--text", required=True)
     p.add_argument("--threshold", type=float, default=None, help="지정하지 않으면 threshold.json 값 사용")
     args = p.parse_args()
